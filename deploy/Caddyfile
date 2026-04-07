@@ -1,0 +1,26 @@
+# Fablescribe — Caddy reverse proxy
+# Lives at /opt/fablescribe/Caddyfile on each Hetzner box.
+#
+# Caddy automatically obtains and renews Let's Encrypt SSL certs for the
+# domain(s) listed below. Set the API_DOMAIN env var in /opt/fablescribe/.env
+# to control which subdomain this box answers on:
+#   prod box: API_DOMAIN=api.fablescribe.io
+#   dev box:  API_DOMAIN=api-dev.fablescribe.io
+
+{$API_DOMAIN} {
+    # Backend HTTP + WebSocket — all /ws/bot, /campaigns/*, /voices, /health, etc.
+    reverse_proxy backend:8000 {
+        # Pass through original host & client IP
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    encode gzip zstd
+
+    log {
+        output stdout
+        format console
+    }
+}

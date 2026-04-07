@@ -1,0 +1,90 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/fablescribe-backend
+  IMAGE_BOT: ghcr.io/${{ github.repository_owner }}/fablescribe-bot
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Build & push Docker images for backend and bot to GitHub Container Registry
+  # ─────────────────────────────────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE_BACKEND }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build & push bot
+        uses: docker/build-push-action@v5
+        with:
+          context: ./bot
+          push: true
+          tags: |
+            ${{ env.IMAGE_BOT }}:${{ steps.tag.outputs.tag }}
+            ${{ env.IMAGE_BOT }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Deploy to the appropriate Hetzner box over SSH
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine target box
+        id: target
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "host=${{ secrets.PROD_SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "host=${{ secrets.DEV_SSH_HOST }}" >> $GITHUB_OUTPUT
+            echo "env=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/fablescribe
+            export IMAGE_TAG="${{ needs.build.outputs.image_tag }}"
+            ./deploy.sh "$IMAGE_TAG"

@@ -1,0 +1,52 @@
+# ── Secrets (NEVER commit) ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env.local
+
+# Notes file contains all API keys and DB credentials
+READ_ME/fablescribe_note.md
+
+# Reference projects (not part of this codebase)
+REF/
+
+# Memory directory for personal notes
+memory/
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ── Node ────────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Docker / Local data ─────────────────────────────────────────────────────
+pgdata/
+qdrant_data/
+
+# Voice previews directory (per-machine local cache)
+backend/voice_previews/
+
+# ── IDE / OS ────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+.cursorrules
+
+# ── Build artifacts ─────────────────────────────────────────────────────────
+*.tsbuildinfo
+.cache/

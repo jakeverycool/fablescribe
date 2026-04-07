@@ -1,0 +1,70 @@
+# Fablescribe — Production docker-compose
+# Lives at /opt/fablescribe/docker-compose.yml on each Hetzner box.
+# Spins up: backend + bot + qdrant + caddy reverse proxy.
+#
+# Env vars are read from /opt/fablescribe/.env (NEVER commit this file).
+# See deploy/env.example for the full list.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: fablescribe_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      ENV: ${ENV}
+      API_DOMAIN: ${API_DOMAIN}
+    networks:
+      - fablescribe
+
+  backend:
+    image: ghcr.io/jakeverycool/fablescribe-backend:${IMAGE_TAG:-latest}
+    container_name: fablescribe_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      BOT_HTTP_URL: http://bot:3001
+    depends_on:
+      - qdrant
+    networks:
+      - fablescribe
+
+  bot:
+    image: ghcr.io/jakeverycool/fablescribe-bot:${IMAGE_TAG:-latest}
+    container_name: fablescribe_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      BACKEND_WS_URL: ws://backend:8000/ws/bot
+    depends_on:
+      - backend
+    networks:
+      - fablescribe
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: fablescribe_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - fablescribe
+
+volumes:
+  qdrant_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  fablescribe:
+    driver: bridge
