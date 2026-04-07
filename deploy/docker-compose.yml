@@ -25,7 +25,10 @@ services:
       - fablescribe
 
   backend:
-    image: ghcr.io/jakeverycool/fablescribe-backend:${IMAGE_TAG:-latest}
+    # IMAGE_TAG is set by deploy.sh (passed by GitHub Actions as the commit SHA).
+    # If unset (manual `docker compose up`), falls back to the per-env tag (`dev` or `prod`)
+    # which the build pipeline pushes alongside the SHA tag.
+    image: ghcr.io/jakeverycool/fablescribe-backend:${IMAGE_TAG:-${ENV}}
     container_name: fablescribe_backend
     restart: unless-stopped
     env_file:
@@ -39,7 +42,7 @@ services:
       - fablescribe
 
   bot:
-    image: ghcr.io/jakeverycool/fablescribe-bot:${IMAGE_TAG:-latest}
+    image: ghcr.io/jakeverycool/fablescribe-bot:${IMAGE_TAG:-${ENV}}
     container_name: fablescribe_bot
     restart: unless-stopped
     env_file:
