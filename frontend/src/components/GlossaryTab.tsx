@@ -28,11 +28,13 @@ export default function GlossaryTab({ campaignId }: { campaignId: string }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-        <h3 style={{ margin: 0, fontSize: "15px" }}>Glossary</h3>
-        <button onClick={() => setShowCreate(true)} style={styles.btn}>
-          + New Entry
-        </button>
+      <div className="tab-header">
+        <h2 className="tab-header__title">Glossary</h2>
+        <div className="tab-header__actions">
+          <button onClick={() => setShowCreate(true)} className="btn btn--primary">
+            + New Entry
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -44,10 +46,15 @@ export default function GlossaryTab({ campaignId }: { campaignId: string }) {
       )}
 
       {entries.length === 0 && !showCreate && (
-        <p style={{ color: "#555", fontStyle: "italic" }}>No glossary entries yet.</p>
+        <div className="empty-state">
+          <div className="empty-state__title">An empty index awaits.</div>
+          <p className="empty-state__body">
+            Add the names, places, factions, and lore that matter so the chatbot can recall them.
+          </p>
+        </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div className="list-stack">
         {entries.map((e) =>
           editing === e.id ? (
             <GlossaryForm
@@ -58,36 +65,37 @@ export default function GlossaryTab({ campaignId }: { campaignId: string }) {
               onCancel={() => setEditing(null)}
             />
           ) : (
-            <div key={e.id} style={styles.card}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div key={e.id} className="list-card">
+              <div className="list-card__header">
                 <div>
-                  <strong>{e.name}</strong>
-                  <span style={styles.badge}>{e.type}</span>
-                  {e.aliases.length > 0 && (
-                    <span style={{ color: "#666", fontSize: "12px", marginLeft: "8px" }}>
-                      aka {e.aliases.join(", ")}
-                    </span>
-                  )}
+                  <div className="list-card__title">{e.name}</div>
+                  <div className="list-card__meta">
+                    <span className="badge badge--neutral">{e.type}</span>
+                    {e.aliases.length > 0 && (
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        aka {e.aliases.join(", ")}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => setEditing(e.id)} style={styles.smallBtn}>Edit</button>
+                <div className="list-card__actions">
+                  <button onClick={() => setEditing(e.id)} className="btn btn--secondary btn--sm">Edit</button>
                   <button
                     onClick={async () => {
                       await apiFetch(`/campaigns/${campaignId}/glossary/${e.id}`, { method: "DELETE" });
                       load();
                     }}
-                    style={{ ...styles.smallBtn, color: "#f87171" }}
+                    className="btn btn--ghost btn--sm"
+                    style={{ color: "var(--danger)" }}
                   >
                     Delete
                   </button>
                 </div>
               </div>
-              {e.description && <p style={styles.desc}>{e.description}</p>}
+              {e.description && <div className="list-card__body">{e.description}</div>}
               {e.tags.length > 0 && (
-                <div style={{ marginTop: "4px", display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                  {e.tags.map((t) => (
-                    <span key={t} style={styles.tag}>{t}</span>
-                  ))}
+                <div className="list-card__footer">
+                  {e.tags.map((t) => <span key={t} className="tag">{t}</span>)}
                 </div>
               )}
             </div>
@@ -145,98 +153,64 @@ function GlossaryForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} style={styles.form}>
-      <div style={{ display: "flex", gap: "8px" }}>
-        <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)} required style={{ ...styles.input, flex: 1 }} />
-        <select value={type} onChange={(e) => setType(e.target.value)} style={styles.input}>
-          {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+    <form onSubmit={handleSubmit} className="form-panel">
+      <div className="form-panel__title">{initial ? "Edit entry" : "New entry"}</div>
+
+      <div className="form-group">
+        <label className="form-label">Name *</label>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className="form-input"
+            style={{ flex: 1 }}
+          />
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            className="form-select"
+          >
+            {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
       </div>
-      <input placeholder="Aliases (comma-separated)" value={aliases} onChange={(e) => setAliases(e.target.value)} style={styles.input} />
-      <textarea placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} style={styles.textarea} />
-      <input placeholder="Tags (comma-separated)" value={tags} onChange={(e) => setTags(e.target.value)} style={styles.input} />
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button type="submit" disabled={saving} style={styles.btn}>
-          {saving ? "Saving..." : initial ? "Update" : "Create"}
+
+      <div className="form-group">
+        <label className="form-label">Aliases</label>
+        <input
+          placeholder="Comma-separated"
+          value={aliases}
+          onChange={(e) => setAliases(e.target.value)}
+          className="form-input"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="form-textarea"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Tags</label>
+        <input
+          placeholder="Comma-separated"
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+          className="form-input"
+        />
+      </div>
+
+      <div className="form-panel__actions">
+        <button type="submit" disabled={saving} className="btn btn--primary">
+          {saving ? "Saving…" : initial ? "Update" : "Create"}
         </button>
-        <button type="button" onClick={onCancel} style={styles.smallBtn}>Cancel</button>
+        <button type="button" onClick={onCancel} className="btn btn--ghost">Cancel</button>
       </div>
     </form>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  card: {
-    padding: "12px 16px",
-    background: "#1a1a1a",
-    borderRadius: "8px",
-    border: "1px solid #2a2a2a",
-  },
-  desc: { margin: "4px 0 0", fontSize: "13px", color: "#888" },
-  badge: {
-    display: "inline-block",
-    marginLeft: "8px",
-    padding: "2px 8px",
-    borderRadius: "4px",
-    background: "#2a2a2a",
-    color: "#aaa",
-    fontSize: "11px",
-  },
-  tag: {
-    padding: "2px 6px",
-    borderRadius: "3px",
-    background: "#1e1e3a",
-    color: "#a78bfa",
-    fontSize: "11px",
-  },
-  btn: {
-    padding: "8px 16px",
-    borderRadius: "6px",
-    border: "none",
-    background: "#7c3aed",
-    color: "#fff",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  smallBtn: {
-    background: "none",
-    border: "1px solid #333",
-    color: "#888",
-    padding: "4px 10px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "12px",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    padding: "16px",
-    background: "#1a1a1a",
-    borderRadius: "8px",
-    border: "1px solid #2a2a2a",
-    marginBottom: "12px",
-  },
-  input: {
-    padding: "8px 12px",
-    borderRadius: "6px",
-    border: "1px solid #333",
-    background: "#0f0f0f",
-    color: "#e0e0e0",
-    fontSize: "13px",
-    outline: "none",
-  },
-  textarea: {
-    padding: "8px 12px",
-    borderRadius: "6px",
-    border: "1px solid #333",
-    background: "#0f0f0f",
-    color: "#e0e0e0",
-    fontSize: "13px",
-    outline: "none",
-    minHeight: "60px",
-    resize: "vertical" as const,
-    fontFamily: "inherit",
-  },
-};

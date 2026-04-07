@@ -56,7 +56,7 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
   // Character presence state
   const [presentCharIds, setPresentCharIds] = useState<Set<string>>(new Set());
 
-  // Speaker mapping (Discord user ID → role/PC)
+  // Speaker mapping
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
 
   // Generate response modal state
@@ -68,7 +68,7 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
   const [generating, setGenerating] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
 
-  // Per-response presence override (initialized from session-level presence)
+  // Per-response presence override
   const [responsePresent, setResponsePresent] = useState<Set<string>>(new Set());
 
   // Promote to memory state
@@ -107,7 +107,6 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
     if (r.ok) setSpeakers(await r.json());
   };
 
-  // Speaker label resolver: returns "Torg (Alex)" for PCs, "Alex (DM)" for DM, "Alex" for unknown
   const getSpeakerLabel = (userId: string, displayName: string): string => {
     const s = speakers.find((sp) => sp.discord_user_id === userId);
     if (!s) return displayName;
@@ -172,25 +171,21 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
   };
 
   const handleDragStart = (idx: number, e: React.MouseEvent) => {
-    // Ignore if clicking the checkbox directly
     if ((e.target as HTMLElement).tagName === "INPUT") return;
 
     isDragging.current = true;
     dragStartIdx.current = idx;
     dragCurrentIdx.current = idx;
     shiftHeld.current = e.shiftKey;
-
-    // Snapshot current selection for shift-additive mode
     preSelectSnapshot.current = new Set(selected);
 
-    // Apply initial single-item selection
     if (e.shiftKey) {
       setSelected(new Set([...selected, transcript[idx].id]));
     } else {
       setSelected(new Set([transcript[idx].id]));
     }
 
-    e.preventDefault(); // Prevent text selection
+    e.preventDefault();
   };
 
   const handleDragEnter = (idx: number) => {
@@ -199,7 +194,6 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
 
     const rangeIds = getRange(dragStartIdx.current, idx);
     if (shiftHeld.current) {
-      // Additive: keep pre-existing selection + add the dragged range
       setSelected(new Set([...preSelectSnapshot.current, ...rangeIds]));
     } else {
       setSelected(new Set(rangeIds));
@@ -210,7 +204,6 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
     isDragging.current = false;
   };
 
-  // Global mouseup listener to end drag even if mouse leaves the transcript box
   useEffect(() => {
     const onMouseUp = () => { isDragging.current = false; };
     window.addEventListener("mouseup", onMouseUp);
@@ -252,7 +245,6 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
     if (r.ok) setActiveSession(await r.json());
   };
 
-  // ── Generate Response ─────────────────────────────────────────────────
   const openGenerate = () => {
     if (selected.size === 0) return;
     setGeneratedText("");
@@ -311,17 +303,14 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
     } else {
       const err = await r.json().catch(() => ({}));
       const detail = err.detail || `HTTP ${r.status}`;
-      // ElevenLabs failures bubble up here too — message is descriptive
       toast.show(`Finalize failed: ${detail}`, "error");
     }
     setFinalizing(false);
   };
 
-  // ── Promote to Memory ─────────────────────────────────────────────────
   const handlePromote = async () => {
     if (selected.size === 0) return;
     setPromoting(true);
-    // Build content from selected transcript lines
     const selectedLines = transcript
       .filter((e) => selected.has(e.id))
       .map((e) => `${e.speaker_display_name}: ${e.text}`)
@@ -340,341 +329,289 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
       setShowPromote(false);
       setSelected(new Set());
       setPromoteAnnotation("");
+      toast.show("Promoted to memory", "success");
     }
     setPromoting(false);
   };
 
   return (
     <div>
-      {/* Create session */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-        <h3 style={{ margin: 0, fontSize: "15px" }}>Sessions</h3>
+      <div className="tab-header">
+        <h2 className="tab-header__title">Sessions</h2>
       </div>
 
-      <form onSubmit={handleCreate} style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+      <form onSubmit={handleCreate} className="form-row" style={{ marginBottom: "var(--space-5)" }}>
         <input
           placeholder="Session title (optional)"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          style={styles.input}
+          className="form-input"
         />
-        <button type="submit" disabled={creating} style={styles.btn}>
-          {creating ? "Creating..." : "+ New Session"}
+        <button type="submit" disabled={creating} className="btn btn--primary">
+          {creating ? "Creating…" : "+ New Session"}
         </button>
       </form>
 
-      {/* Session selector */}
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "16px" }}>
-        {sessions.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => { setActiveSession(s); setSelected(new Set()); }}
-            style={{
-              ...styles.sessionBtn,
-              ...(activeSession?.id === s.id ? styles.sessionBtnActive : {}),
-            }}
-          >
-            {s.title || "Untitled"}{" "}
-            <span style={{ fontSize: "10px", color: s.status === "active" ? "#4ade80" : "#666" }}>
-              ({s.status})
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {/* Active session + presence panel */}
-      {activeSession && (
-        <div style={{ display: "flex", gap: "16px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-        <>
-          {/* Controls */}
-          <div style={styles.controlBar}>
-            <span style={{ fontSize: "13px", flex: 1 }}>
-              <strong>{activeSession.title || "Untitled"}</strong>
-              {" — "}
-              <span style={{ color: activeSession.status === "active" ? "#4ade80" : "#888" }}>
-                {activeSession.status}
+      {sessions.length > 0 && (
+        <div className="session-pill-row">
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => { setActiveSession(s); setSelected(new Set()); }}
+              className={`session-pill${activeSession?.id === s.id ? " active" : ""}`}
+            >
+              {s.title || "Untitled"}
+              <span
+                className={`session-pill__status${s.status === "active" ? " session-pill__status--active" : ""}`}
+              >
+                {s.status}
               </span>
-              {activeSession.paused && (
-                <span style={{ color: "#fbbf24", marginLeft: "8px" }}>(PAUSED)</span>
-              )}
-            </span>
-            {activeSession.status === "active" && (
-              <>
-                <button onClick={handlePause} style={styles.controlBtn}>
-                  {activeSession.paused ? "Resume STT" : "Pause STT"}
-                </button>
-                <button
-                  onClick={handleEnd}
-                  style={{ ...styles.controlBtn, borderColor: "#f87171", color: "#f87171" }}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeSession && (
+        <div className="session-layout">
+          <div style={{ minWidth: 0 }}>
+            <div className="session-bar">
+              <div className="session-bar__title">
+                <strong>{activeSession.title || "Untitled"}</strong>
+                <span
+                  className={`status-dot status-dot--${
+                    activeSession.paused ? "paused" : activeSession.status === "active" ? "active" : "ended"
+                  }`}
                 >
-                  End Session
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Transcript */}
-          <div style={styles.transcriptBox}>
-            {transcript.length === 0 && (
-              <p style={{ color: "#555", fontStyle: "italic", padding: "16px" }}>
-                {activeSession.status === "active"
-                  ? "Waiting for transcript... Use /join in Discord."
-                  : "No transcript entries for this session."}
-              </p>
-            )}
-            {transcript.map((e, idx) => (
-              <div
-                key={e.id}
-                onMouseDown={(ev) => handleDragStart(idx, ev)}
-                onMouseEnter={() => handleDragEnter(idx)}
-                onMouseUp={handleDragEnd}
-                style={{
-                  ...styles.transcriptEntry,
-                  ...(selected.has(e.id) ? styles.transcriptSelected : {}),
-                  cursor: "pointer",
-                  userSelect: "none",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(e.id)}
-                    onChange={() => toggleSelect(e.id)}
-                    onClick={(ev) => ev.stopPropagation()}
-                    style={{ accentColor: "#7c3aed" }}
-                  />
-                  <span style={styles.speaker}>{getSpeakerLabel(e.speaker_user_id, e.speaker_display_name)}</span>
-                  <span style={styles.timestamp}>
-                    {new Date(e.created_at).toLocaleTimeString()}
-                  </span>
-                </div>
-                <p style={{ margin: "2px 0 0 24px", fontSize: "13px", lineHeight: 1.5 }}>
-                  {e.text}
-                </p>
+                  {activeSession.paused ? "paused" : activeSession.status}
+                </span>
               </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Selection action bar */}
-          {selected.size > 0 && (
-            <div style={{ ...styles.actionBar, marginTop: "8px" }}>
-              <span style={{ fontSize: "12px", color: "#aaa" }}>{selected.size} selected</span>
-              <button onClick={() => setShowPromote(true)} style={styles.actionBtn}>
-                Promote to Memory
-              </button>
-              <button onClick={openGenerate} style={{ ...styles.actionBtn, background: "#c084fc" }}>
-                Generate Response
-              </button>
-              <button onClick={() => setSelected(new Set())} style={styles.clearBtn}>
-                Clear
-              </button>
-            </div>
-          )}
-
-          {/* Promote modal */}
-          {showPromote && (
-            <div style={{ ...styles.modal, marginTop: "8px" }}>
-              <h4 style={{ margin: "0 0 8px", fontSize: "14px" }}>Promote to Memory</h4>
-              <p style={{ margin: "0 0 8px", fontSize: "12px", color: "#888" }}>
-                {selected.size} transcript lines will be saved as a memory note.
-              </p>
-              <textarea
-                placeholder="DM annotation (optional)"
-                value={promoteAnnotation}
-                onChange={(e) => setPromoteAnnotation(e.target.value)}
-                style={styles.textarea}
-              />
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <button onClick={handlePromote} disabled={promoting} style={styles.btn}>
-                  {promoting ? "Saving..." : "Save Note"}
-                </button>
-                <button onClick={() => setShowPromote(false)} style={styles.clearBtn}>Cancel</button>
-              </div>
-            </div>
-          )}
-
-          {/* Generate response modal */}
-          {showGenerate && (
-            <div style={{ ...styles.modal, marginTop: "8px" }}>
-              <h4 style={{ margin: "0 0 8px", fontSize: "14px" }}>Generate NPC Response</h4>
-              <select
-                value={genCharacterId}
-                onChange={(e) => setGenCharacterId(e.target.value)}
-                style={styles.input}
-              >
-                {characters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.elevenlabs_voice_id ? "(has voice)" : "(no voice)"}
-                  </option>
-                ))}
-              </select>
-              <textarea
-                placeholder="Additional context for the AI (optional)"
-                value={genContext}
-                onChange={(e) => setGenContext(e.target.value)}
-                style={{ ...styles.textarea, marginTop: "8px" }}
-              />
-
-              {/* Per-response presence override */}
-              {characters.filter((c) => presentCharIds.has(c.id)).length > 0 && (
-                <div style={{ marginTop: "8px" }}>
-                  <span style={{ fontSize: "11px", color: "#888" }}>NPCs who hear this exchange:</span>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "4px" }}>
-                    {characters
-                      .filter((c) => presentCharIds.has(c.id))
-                      .map((c) => (
-                        <label key={c.id} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "#ccc", cursor: "pointer" }}>
-                          <input
-                            type="checkbox"
-                            checked={responsePresent.has(c.id)}
-                            onChange={() => {
-                              setResponsePresent((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(c.id)) next.delete(c.id);
-                                else next.add(c.id);
-                                return next;
-                              });
-                            }}
-                            style={{ accentColor: "#7c3aed" }}
-                          />
-                          {c.name}
-                        </label>
-                      ))}
-                  </div>
-                </div>
-              )}
-
-              {!generatedText ? (
-                <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                  <button onClick={handleGenerate} disabled={generating || !genCharacterId} style={styles.btn}>
-                    {generating ? "Generating..." : "Generate"}
-                  </button>
-                  <button onClick={() => setShowGenerate(false)} style={styles.clearBtn}>Cancel</button>
-                </div>
-              ) : (
+              {activeSession.status === "active" && (
                 <>
-                  <textarea
-                    value={generatedText}
-                    onChange={(e) => setGeneratedText(e.target.value)}
-                    style={{ ...styles.textarea, marginTop: "8px", minHeight: "100px", color: "#c084fc" }}
-                  />
-                  <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#666" }}>
-                    Edit the text above if needed, then generate audio.
-                  </p>
-                  <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                    <button onClick={handleGenerate} disabled={generating} style={styles.clearBtn}>
-                      {generating ? "Regenerating..." : "Regenerate"}
-                    </button>
-                    <button onClick={handleFinalize} disabled={finalizing} style={{ ...styles.btn, background: "#4ade80", color: "#000" }}>
-                      {finalizing ? "Finalizing..." : "Generate Audio & Save"}
-                    </button>
-                    <button onClick={() => setShowGenerate(false)} style={styles.clearBtn}>Cancel</button>
-                  </div>
+                  <button onClick={handlePause} className="btn btn--secondary btn--sm">
+                    {activeSession.paused ? "Resume STT" : "Pause STT"}
+                  </button>
+                  <button
+                    onClick={handleEnd}
+                    className="btn btn--secondary btn--sm"
+                    style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                  >
+                    End Session
+                  </button>
                 </>
               )}
             </div>
-          )}
-        </>
-        </div>
 
-        {/* Character presence panel */}
-        <div style={styles.presencePanel}>
-          <h4 style={{ margin: "0 0 12px", fontSize: "13px", color: "#aaa" }}>Present NPCs</h4>
-          {characters.length === 0 && (
-            <p style={{ color: "#555", fontSize: "12px", fontStyle: "italic" }}>No characters yet.</p>
-          )}
-          {characters.map((c) => (
-            <label key={c.id} style={styles.presenceRow}>
-              <input
-                type="checkbox"
-                checked={presentCharIds.has(c.id)}
-                onChange={() => {
-                  setPresentCharIds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(c.id)) next.delete(c.id);
-                    else next.add(c.id);
-                    return next;
-                  });
-                }}
-                style={{ accentColor: "#7c3aed" }}
-              />
-              <span style={{ fontSize: "13px" }}>{c.name}</span>
-              {!c.elevenlabs_voice_id && (
-                <span style={{ fontSize: "10px", color: "#555", marginLeft: "auto" }}>no voice</span>
+            <div className="transcript-box">
+              {transcript.length === 0 ? (
+                <div className="transcript-empty">
+                  {activeSession.status === "active"
+                    ? "Waiting for transcript… Use /join in Discord."
+                    : "No transcript entries for this session."}
+                </div>
+              ) : (
+                transcript.map((e, idx) => (
+                  <div
+                    key={e.id}
+                    onMouseDown={(ev) => handleDragStart(idx, ev)}
+                    onMouseEnter={() => handleDragEnter(idx)}
+                    onMouseUp={handleDragEnd}
+                    className={`transcript-row${selected.has(e.id) ? " selected" : ""}`}
+                  >
+                    <div className="transcript-row__head">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(e.id)}
+                        onChange={() => toggleSelect(e.id)}
+                        onClick={(ev) => ev.stopPropagation()}
+                        className="checkbox"
+                      />
+                      <span className="transcript-row__speaker">
+                        {getSpeakerLabel(e.speaker_user_id, e.speaker_display_name)}
+                      </span>
+                      <span className="transcript-row__time">
+                        {new Date(e.created_at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="transcript-row__body">{e.text}</p>
+                  </div>
+                ))
               )}
-            </label>
-          ))}
-        </div>
+              <div ref={bottomRef} />
+            </div>
+
+            {selected.size > 0 && (
+              <div className="action-bar">
+                <span className="action-bar__count">{selected.size} selected</span>
+                <button onClick={() => setShowPromote(true)} className="btn btn--secondary btn--sm">
+                  Promote to Memory
+                </button>
+                <button onClick={openGenerate} className="btn btn--primary btn--sm">
+                  Generate Response
+                </button>
+                <button onClick={() => setSelected(new Set())} className="btn btn--ghost btn--sm">
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {showPromote && (
+              <div className="inline-panel">
+                <div className="inline-panel__title">Promote to Memory</div>
+                <div className="inline-panel__hint">
+                  {selected.size} transcript lines will be saved as a memory note.
+                </div>
+                <div className="form-group">
+                  <label className="form-label">DM annotation (optional)</label>
+                  <textarea
+                    value={promoteAnnotation}
+                    onChange={(e) => setPromoteAnnotation(e.target.value)}
+                    className="form-textarea"
+                  />
+                </div>
+                <div className="form-panel__actions">
+                  <button onClick={handlePromote} disabled={promoting} className="btn btn--primary">
+                    {promoting ? "Saving…" : "Save Note"}
+                  </button>
+                  <button onClick={() => setShowPromote(false)} className="btn btn--ghost">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {showGenerate && (
+              <div className="inline-panel">
+                <div className="inline-panel__title">Generate NPC Response</div>
+
+                <div className="form-group">
+                  <label className="form-label">Character</label>
+                  <select
+                    value={genCharacterId}
+                    onChange={(e) => setGenCharacterId(e.target.value)}
+                    className="form-select"
+                    style={{ width: "100%" }}
+                  >
+                    {characters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.elevenlabs_voice_id ? "(has voice)" : "(no voice)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Additional context (optional)</label>
+                  <textarea
+                    value={genContext}
+                    onChange={(e) => setGenContext(e.target.value)}
+                    className="form-textarea"
+                  />
+                </div>
+
+                {characters.filter((c) => presentCharIds.has(c.id)).length > 0 && (
+                  <div className="form-group">
+                    <label className="form-label">NPCs who hear this exchange</label>
+                    <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                      {characters
+                        .filter((c) => presentCharIds.has(c.id))
+                        .map((c) => (
+                          <label key={c.id} className="checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={responsePresent.has(c.id)}
+                              onChange={() => {
+                                setResponsePresent((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(c.id)) next.delete(c.id);
+                                  else next.add(c.id);
+                                  return next;
+                                });
+                              }}
+                              className="checkbox"
+                            />
+                            {c.name}
+                          </label>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {!generatedText ? (
+                  <div className="form-panel__actions">
+                    <button
+                      onClick={handleGenerate}
+                      disabled={generating || !genCharacterId}
+                      className="btn btn--primary"
+                    >
+                      {generating ? "Generating…" : "Generate"}
+                    </button>
+                    <button onClick={() => setShowGenerate(false)} className="btn btn--ghost">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Generated text (editable)</label>
+                      <textarea
+                        value={generatedText}
+                        onChange={(e) => setGeneratedText(e.target.value)}
+                        className="form-textarea"
+                        style={{ minHeight: 140, color: "var(--violet-200)" }}
+                      />
+                      <p className="form-helper">Edit the text above if needed, then generate audio.</p>
+                    </div>
+                    <div className="form-panel__actions">
+                      <button onClick={handleGenerate} disabled={generating} className="btn btn--secondary">
+                        {generating ? "Regenerating…" : "Regenerate"}
+                      </button>
+                      <button
+                        onClick={handleFinalize}
+                        disabled={finalizing}
+                        className="btn btn--gold"
+                      >
+                        {finalizing ? "Finalizing…" : "Generate Audio & Save"}
+                      </button>
+                      <button onClick={() => setShowGenerate(false)} className="btn btn--ghost">
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          <aside className="presence-panel">
+            <div className="presence-panel__title">Present NPCs</div>
+            {characters.length === 0 && (
+              <p className="muted--italic" style={{ fontSize: 13 }}>No characters yet.</p>
+            )}
+            {characters.map((c) => (
+              <label key={c.id} className="presence-row">
+                <input
+                  type="checkbox"
+                  checked={presentCharIds.has(c.id)}
+                  onChange={() => {
+                    setPresentCharIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(c.id)) next.delete(c.id);
+                      else next.add(c.id);
+                      return next;
+                    });
+                  }}
+                  className="checkbox"
+                />
+                <span>{c.name}</span>
+                {!c.elevenlabs_voice_id && (
+                  <span className="presence-row__voice">no voice</span>
+                )}
+              </label>
+            ))}
+          </aside>
         </div>
       )}
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  input: {
-    flex: 1, padding: "8px 12px", borderRadius: "6px", border: "1px solid #333",
-    background: "#0f0f0f", color: "#e0e0e0", fontSize: "13px", outline: "none",
-  },
-  textarea: {
-    width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #333",
-    background: "#0f0f0f", color: "#e0e0e0", fontSize: "13px", outline: "none",
-    minHeight: "60px", resize: "vertical" as const, fontFamily: "inherit", boxSizing: "border-box" as const,
-  },
-  btn: {
-    padding: "8px 16px", borderRadius: "6px", border: "none", background: "#7c3aed",
-    color: "#fff", fontSize: "13px", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
-  },
-  sessionBtn: {
-    padding: "6px 12px", borderRadius: "6px", border: "1px solid #333",
-    background: "#1a1a1a", color: "#888", fontSize: "12px", cursor: "pointer",
-  },
-  sessionBtnActive: { border: "1px solid #7c3aed", color: "#e0e0e0" },
-  controlBar: {
-    display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px",
-    padding: "12px", background: "#1a1a1a", borderRadius: "8px", border: "1px solid #2a2a2a",
-  },
-  controlBtn: {
-    padding: "6px 14px", borderRadius: "6px", border: "1px solid #555",
-    background: "none", color: "#e0e0e0", fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap",
-  },
-  actionBar: {
-    display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px",
-    padding: "8px 12px", background: "#1a1a2a", borderRadius: "8px", border: "1px solid #333",
-  },
-  actionBtn: {
-    padding: "6px 12px", borderRadius: "6px", border: "none", background: "#7c3aed",
-    color: "#fff", fontSize: "12px", fontWeight: 600, cursor: "pointer",
-  },
-  clearBtn: {
-    padding: "6px 12px", borderRadius: "6px", border: "1px solid #444",
-    background: "none", color: "#888", fontSize: "12px", cursor: "pointer",
-  },
-  modal: {
-    padding: "16px", background: "#1a1a1a", borderRadius: "8px", border: "1px solid #444",
-    marginBottom: "12px",
-  },
-  transcriptBox: {
-    background: "#0a0a0a", border: "1px solid #2a2a2a", borderRadius: "8px",
-    maxHeight: "500px", overflowY: "auto",
-  },
-  transcriptEntry: {
-    padding: "8px 16px", borderBottom: "1px solid #1a1a1a",
-  },
-  transcriptSelected: {
-    background: "#1a1a2e", borderLeft: "3px solid #7c3aed",
-  },
-  speaker: { color: "#7dd3fc", fontWeight: 600, marginRight: "8px", fontSize: "13px" },
-  timestamp: { color: "#555", fontSize: "11px" },
-  presencePanel: {
-    width: "180px", flexShrink: 0, padding: "12px",
-    background: "#1a1a1a", borderRadius: "8px", border: "1px solid #2a2a2a",
-    alignSelf: "flex-start", position: "sticky" as const, top: "16px",
-  },
-  presenceRow: {
-    display: "flex", alignItems: "center", gap: "8px",
-    padding: "6px 0", cursor: "pointer", color: "#e0e0e0",
-  },
-};

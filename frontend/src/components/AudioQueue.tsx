@@ -41,24 +41,31 @@ export default function AudioQueue({ campaignId }: { campaignId: string }) {
   if (entries.length === 0) return null;
 
   return (
-    <div style={styles.container}>
-      <h4 style={styles.title}>Audio Queue ({entries.length})</h4>
+    <div className="audio-queue">
+      <div className="audio-queue__title">Audio Queue ({entries.length})</div>
       {entries.map((e) => (
-        <div key={e.id} style={styles.entry}>
-          <p style={styles.text}>{e.final_text?.slice(0, 100)}...</p>
-          <div style={{ display: "flex", gap: "6px" }}>
+        <div key={e.id} className="audio-queue__entry">
+          <div className="audio-queue__text">
+            {e.final_text?.slice(0, 100)}
+            {(e.final_text?.length ?? 0) > 100 ? "…" : ""}
+          </div>
+          <div className="audio-queue__row">
             {e.queue_status === "pending" && e.audio_file_ref && (
-              <button onClick={() => handlePlay(e.id)} style={styles.playBtn}>
+              <button onClick={() => handlePlay(e.id)} className="btn btn--gold btn--sm">
                 Play
               </button>
             )}
             {e.queue_status === "pending" && !e.audio_file_ref && (
-              <span style={{ color: "#f87171", fontSize: "11px" }}>No audio (TTS failed)</span>
+              <span className="badge badge--danger">No audio</span>
             )}
             {e.queue_status === "playing" && (
-              <span style={{ color: "#4ade80", fontSize: "12px" }}>Playing...</span>
+              <span className="status-dot status-dot--active">Playing</span>
             )}
-            <button onClick={() => handleCancel(e.id)} style={styles.cancelBtn}>
+            <button
+              onClick={() => handleCancel(e.id)}
+              className="btn btn--ghost btn--sm"
+              style={{ marginLeft: "auto" }}
+            >
               Cancel
             </button>
           </div>
@@ -67,48 +74,3 @@ export default function AudioQueue({ campaignId }: { campaignId: string }) {
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: "fixed",
-    bottom: "24px",
-    right: "24px",
-    width: "320px",
-    background: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: "12px",
-    padding: "12px",
-    zIndex: 100,
-    maxHeight: "300px",
-    overflowY: "auto",
-  },
-  title: { margin: "0 0 8px", fontSize: "13px", color: "#c084fc" },
-  entry: {
-    padding: "8px",
-    borderBottom: "1px solid #2a2a2a",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "8px",
-  },
-  text: { margin: 0, fontSize: "12px", color: "#aaa", flex: 1 },
-  playBtn: {
-    padding: "4px 12px",
-    borderRadius: "4px",
-    border: "none",
-    background: "#4ade80",
-    color: "#000",
-    fontSize: "11px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  cancelBtn: {
-    padding: "4px 8px",
-    borderRadius: "4px",
-    border: "1px solid #555",
-    background: "none",
-    color: "#888",
-    fontSize: "11px",
-    cursor: "pointer",
-  },
-};

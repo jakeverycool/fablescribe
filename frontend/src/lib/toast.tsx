@@ -12,6 +12,18 @@ interface ToastCtx {
 
 const ToastContext = createContext<ToastCtx>({ show: () => {} });
 
+const variantClass: Record<Toast["variant"], string> = {
+  info: "toast--info",
+  success: "",
+  error: "toast--danger",
+};
+
+const variantTitle: Record<Toast["variant"], string> = {
+  info: "Notice",
+  success: "Success",
+  error: "Error",
+};
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -30,18 +42,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      <div style={styles.container}>
+      <div className="toast-stack">
         {toasts.map((t) => (
           <div
             key={t.id}
-            style={{
-              ...styles.toast,
-              ...(t.variant === "error" ? styles.error : {}),
-              ...(t.variant === "success" ? styles.success : {}),
-            }}
+            className={`toast ${variantClass[t.variant]}`}
             onClick={() => dismiss(t.id)}
+            role="status"
           >
-            {t.message}
+            <div>
+              <div className="toast__title">{variantTitle[t.variant]}</div>
+              <div className="toast__body">{t.message}</div>
+            </div>
           </div>
         ))}
       </div>
@@ -52,36 +64,3 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export function useToast() {
   return useContext(ToastContext);
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    position: "fixed",
-    top: "16px",
-    right: "16px",
-    zIndex: 9999,
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    maxWidth: "400px",
-  },
-  toast: {
-    padding: "12px 16px",
-    background: "#1a1a1a",
-    border: "1px solid #333",
-    borderLeft: "3px solid #7c3aed",
-    borderRadius: "6px",
-    color: "#e0e0e0",
-    fontSize: "13px",
-    fontFamily: "'JetBrains Mono', monospace",
-    cursor: "pointer",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-  },
-  error: {
-    borderLeftColor: "#f87171",
-    background: "#1a0a0a",
-  },
-  success: {
-    borderLeftColor: "#4ade80",
-    background: "#0a1a0f",
-  },
-};

@@ -41,11 +41,13 @@ export default function CharactersTab({ campaignId }: { campaignId: string }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-        <h3 style={{ margin: 0, fontSize: "15px" }}>Characters</h3>
-        <button onClick={() => setShowCreate(true)} style={styles.btn}>
-          + New Character
-        </button>
+      <div className="tab-header">
+        <h2 className="tab-header__title">Characters</h2>
+        <div className="tab-header__actions">
+          <button onClick={() => setShowCreate(true)} className="btn btn--primary">
+            + New Character
+          </button>
+        </div>
       </div>
 
       {showCreate && (
@@ -61,10 +63,15 @@ export default function CharactersTab({ campaignId }: { campaignId: string }) {
       )}
 
       {characters.length === 0 && !showCreate && (
-        <p style={{ color: "#555", fontStyle: "italic" }}>No characters yet.</p>
+        <div className="empty-state">
+          <div className="empty-state__title">No characters yet.</div>
+          <p className="empty-state__body">
+            Create NPCs the party will meet — give each one a voice, a personality, and a secret or two.
+          </p>
+        </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div className="list-stack">
         {characters.map((c) =>
           editing === c.id ? (
             <CharacterForm
@@ -79,18 +86,20 @@ export default function CharactersTab({ campaignId }: { campaignId: string }) {
               onCancel={() => setEditing(null)}
             />
           ) : (
-            <div key={c.id} style={styles.card}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div key={c.id} className="list-card">
+              <div className="list-card__header">
                 <div>
-                  <strong>{c.name}</strong>
+                  <div className="list-card__title">{c.name}</div>
                   {c.elevenlabs_voice_id && (
-                    <span style={{ color: "#888", fontSize: "12px", marginLeft: "8px" }}>
-                      Voice: {voices.find((v) => v.id === c.elevenlabs_voice_id)?.name || c.elevenlabs_voice_id}
-                    </span>
+                    <div className="list-card__meta">
+                      <span className="badge badge--neutral">
+                        Voice: {voices.find((v) => v.id === c.elevenlabs_voice_id)?.name || c.elevenlabs_voice_id}
+                      </span>
+                    </div>
                   )}
                 </div>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => setEditing(c.id)} style={styles.smallBtn}>
+                <div className="list-card__actions">
+                  <button onClick={() => setEditing(c.id)} className="btn btn--secondary btn--sm">
                     Edit
                   </button>
                   <button
@@ -98,17 +107,18 @@ export default function CharactersTab({ campaignId }: { campaignId: string }) {
                       await apiFetch(`/campaigns/${campaignId}/characters/${c.id}`, { method: "DELETE" });
                       load();
                     }}
-                    style={{ ...styles.smallBtn, color: "#f87171" }}
+                    className="btn btn--ghost btn--sm"
+                    style={{ color: "var(--danger)" }}
                   >
                     Delete
                   </button>
                 </div>
               </div>
-              {c.description && <p style={styles.desc}>{c.description}</p>}
+              {c.description && <div className="list-card__body">{c.description}</div>}
               {c.personality && (
-                <p style={{ ...styles.desc, color: "#7dd3fc" }}>
-                  Personality: {c.personality}
-                </p>
+                <div className="list-card__body" style={{ color: "var(--violet-200)" }}>
+                  <em>Personality:</em> {c.personality}
+                </div>
               )}
             </div>
           )
@@ -170,104 +180,97 @@ function CharacterForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} style={styles.form}>
-      <input placeholder="Name *" value={name} onChange={(e) => setName(e.target.value)} required style={styles.input} />
-      <textarea placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} style={styles.textarea} />
-      <textarea placeholder="Personality" value={personality} onChange={(e) => setPersonality(e.target.value)} style={styles.textarea} />
-      <textarea placeholder="Speech notes (accent, cadence, verbal tics)" value={speechNotes} onChange={(e) => setSpeechNotes(e.target.value)} style={styles.textarea} />
-      <textarea placeholder="Secrets (DM-only)" value={secrets} onChange={(e) => setSecrets(e.target.value)} style={styles.textarea} />
-      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-        <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} style={{ ...styles.input, flex: 1 }}>
-          <option value="">No voice assigned</option>
-          {voices.map((v) => (
-            <option key={v.id} value={v.id}>{v.name}</option>
-          ))}
-        </select>
-        {voiceId && (() => {
-          const voice = voices.find((v) => v.id === voiceId);
-          return voice?.preview_url ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (audioRef.current) { audioRef.current.pause(); }
-                audioRef.current = new Audio(voice.preview_url);
-                audioRef.current.play();
-              }}
-              style={styles.smallBtn}
-            >
-              Preview
-            </button>
-          ) : null;
-        })()}
+    <form onSubmit={handleSubmit} className="form-panel">
+      <div className="form-panel__title">{initial ? "Edit character" : "New character"}</div>
+
+      <div className="form-group">
+        <label className="form-label">Name *</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="form-input"
+        />
       </div>
-      <div style={{ display: "flex", gap: "8px" }}>
-        <button type="submit" disabled={saving} style={styles.btn}>
-          {saving ? "Saving..." : initial ? "Update" : "Create"}
+
+      <div className="form-group">
+        <label className="form-label">Description</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          className="form-textarea"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Personality</label>
+        <textarea
+          value={personality}
+          onChange={(e) => setPersonality(e.target.value)}
+          className="form-textarea"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Speech notes</label>
+        <textarea
+          placeholder="Accent, cadence, verbal tics…"
+          value={speechNotes}
+          onChange={(e) => setSpeechNotes(e.target.value)}
+          className="form-textarea"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Secrets <span style={{ color: "var(--tome-400)" }}>(DM-only)</span></label>
+        <textarea
+          value={secrets}
+          onChange={(e) => setSecrets(e.target.value)}
+          className="form-textarea"
+        />
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">Voice</label>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+          <select
+            value={voiceId}
+            onChange={(e) => setVoiceId(e.target.value)}
+            className="form-select"
+            style={{ flex: 1 }}
+          >
+            <option value="">No voice assigned</option>
+            {voices.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+          {voiceId && (() => {
+            const voice = voices.find((v) => v.id === voiceId);
+            return voice?.preview_url ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (audioRef.current) audioRef.current.pause();
+                  audioRef.current = new Audio(voice.preview_url);
+                  audioRef.current.play();
+                }}
+                className="btn btn--secondary btn--sm"
+              >
+                Preview
+              </button>
+            ) : null;
+          })()}
+        </div>
+      </div>
+
+      <div className="form-panel__actions">
+        <button type="submit" disabled={saving} className="btn btn--primary">
+          {saving ? "Saving…" : initial ? "Update" : "Create"}
         </button>
-        <button type="button" onClick={onCancel} style={styles.smallBtn}>
+        <button type="button" onClick={onCancel} className="btn btn--ghost">
           Cancel
         </button>
       </div>
     </form>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  card: {
-    padding: "12px 16px",
-    background: "#1a1a1a",
-    borderRadius: "8px",
-    border: "1px solid #2a2a2a",
-  },
-  desc: { margin: "4px 0 0", fontSize: "13px", color: "#888" },
-  btn: {
-    padding: "8px 16px",
-    borderRadius: "6px",
-    border: "none",
-    background: "#7c3aed",
-    color: "#fff",
-    fontSize: "13px",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  smallBtn: {
-    background: "none",
-    border: "1px solid #333",
-    color: "#888",
-    padding: "4px 10px",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontSize: "12px",
-  },
-  form: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "8px",
-    padding: "16px",
-    background: "#1a1a1a",
-    borderRadius: "8px",
-    border: "1px solid #2a2a2a",
-    marginBottom: "12px",
-  },
-  input: {
-    padding: "8px 12px",
-    borderRadius: "6px",
-    border: "1px solid #333",
-    background: "#0f0f0f",
-    color: "#e0e0e0",
-    fontSize: "13px",
-    outline: "none",
-  },
-  textarea: {
-    padding: "8px 12px",
-    borderRadius: "6px",
-    border: "1px solid #333",
-    background: "#0f0f0f",
-    color: "#e0e0e0",
-    fontSize: "13px",
-    outline: "none",
-    minHeight: "60px",
-    resize: "vertical" as const,
-    fontFamily: "inherit",
-  },
-};

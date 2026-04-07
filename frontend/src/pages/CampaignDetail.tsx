@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 import { apiFetch } from "../lib/supabase";
+import { useToast } from "../lib/toast";
 import SessionsTab from "../components/SessionsTab";
 import CharactersTab from "../components/CharactersTab";
 import PlayersTab from "../components/PlayersTab";
@@ -31,9 +32,12 @@ type Tab = (typeof TABS)[number];
 export default function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>();
   const { signOut } = useAuth();
+  const toast = useToast();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("Sessions");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [showReindex, setShowReindex] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -52,22 +56,20 @@ export default function CampaignDetail() {
   }
 
   const handleReindex = async () => {
-    if (
-      !confirm(
-        "Re-vectorize all characters, glossary, and memory? This is safe to run multiple times.",
-      )
-    )
-      return;
+    setReindexing(true);
     const r = await apiFetch(`/campaigns/${campaign.id}/reindex`, {
       method: "POST",
     });
+    setReindexing(false);
+    setShowReindex(false);
     if (r.ok) {
       const counts = await r.json();
-      alert(
-        `Reindex complete:\n${counts.characters} characters\n${counts.glossary} glossary entries\n${counts.memory} memory entries\n${counts.skipped} skipped`,
+      toast.show(
+        `Reindex complete: ${counts.characters} characters, ${counts.glossary} glossary, ${counts.memory} memory (${counts.skipped} skipped)`,
+        "success",
       );
     } else {
-      alert("Reindex failed");
+      toast.show("Reindex failed", "error");
     }
   };
 
@@ -86,7 +88,7 @@ export default function CampaignDetail() {
         </div>
         <div className="topnav__right">
           <button
-            onClick={handleReindex}
+            onClick={() => setShowReindex(true)}
             className="btn btn--secondary btn--sm"
           >
             Reindex
@@ -128,6 +130,36 @@ export default function CampaignDetail() {
       </main>
 
       <AudioQueue campaignId={campaign.id} />
+
+      {showReindex && (
+        <div className="modal-backdrop" onClick={() => !reindexing && setShowReindex(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal__header">
+              <div className="modal__title">Reindex campaign?</div>
+            </div>
+            <div className="modal__body">
+              Re-vectorize all characters, glossary, and memory entries. This is safe to run
+              multiple times — existing vectors will be replaced.
+            </div>
+            <div className="modal__footer">
+              <button
+                onClick={() => setShowReindex(false)}
+                disabled={reindexing}
+                className="btn btn--ghost"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReindex}
+                disabled={reindexing}
+                className="btn btn--primary"
+              >
+                {reindexing ? "Reindexing…" : "Reindex"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
