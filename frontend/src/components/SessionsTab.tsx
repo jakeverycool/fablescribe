@@ -52,7 +52,6 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
   const dragCurrentIdx = useRef<number>(-1);
   const preSelectSnapshot = useRef<Set<string>>(new Set());
   const shiftHeld = useRef(false);
-  const transcriptBoxRef = useRef<HTMLDivElement>(null);
 
   // Character presence state
   const [presentCharIds, setPresentCharIds] = useState<Set<string>>(new Set());
