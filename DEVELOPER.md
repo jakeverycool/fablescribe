@@ -2,7 +2,7 @@
 
 > AI-powered DM storytelling toolkit: live Discord voice transcription, DM-curated campaign memory, AI-voiced NPC responses, and a campaign-memory chatbot.
 
-This document describes the current state of the codebase as built through Phase 1. For product vision and design rationale, see [`READ_ME/fablescribe-preplanning.md`](READ_ME/fablescribe-preplanning.md). For phase-by-phase build plans, see [`READ_ME/fablescribe-phase-*.md`](READ_ME/).
+This document describes the current state of the codebase through Phase 1.5 (deployed dev + prod environments). For product vision and design rationale, see [`READ_ME/fablescribe-preplanning.md`](READ_ME/fablescribe-preplanning.md). For phase-by-phase build plans, see [`READ_ME/fablescribe-phase-*.md`](READ_ME/). For the deployment runbook, see [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ---
 
@@ -10,64 +10,81 @@ This document describes the current state of the codebase as built through Phase
 
 ```
 fablescribe/
-├── bot/                    # Node.js Discord bot (voice receive + audio playback)
+├── bot/                            # Node.js Discord bot (voice receive + audio playback)
 │   ├── src/
-│   │   ├── index.js              # Main bot entry: slash commands, voice receive, HTTP server
-│   │   ├── audio-processor.js    # 48kHz stereo → 16kHz mono PCM downsampler
-│   │   └── register-commands.js  # One-time slash command registration
-│   ├── package.json
-│   └── .env                # DISCORD_TOKEN, BACKEND_WS_URL, BOT_SECRET
+│   │   ├── index.js                    # Main bot entry: slash commands, voice receive, HTTP server
+│   │   ├── audio-processor.js          # 48kHz stereo → 16kHz mono PCM downsampler
+│   │   └── register-commands.js        # One-time slash command registration
+│   ├── Dockerfile                  # Production image (Node 20-slim)
+│   ├── .dockerignore
+│   ├── .env.example                # Template for local dev
+│   └── package.json
 │
-├── backend/                # Python FastAPI backend
-│   ├── main.py             # FastAPI app, lifespan, WebSocket endpoints, voices endpoint
-│   ├── config.py           # Environment variable loading
-│   ├── auth.py             # Supabase JWT verification, DM permission helper
-│   ├── db.py               # Async psycopg connection + query helpers
-│   ├── vectorization.py    # Qdrant client + Nomic embedding wrapper
-│   ├── routers/            # FastAPI routers for each resource
-│   │   ├── campaigns.py        # CRUD + audio queue
-│   │   ├── sessions.py         # Lifecycle (start/end/pause/resume) + transcript fetch
-│   │   ├── characters.py       # CRUD with kind=npc/pc filter
-│   │   ├── speakers.py         # Discord speaker → role/PC mapping
-│   │   ├── glossary.py         # CRUD with auto-vectorization
-│   │   ├── files.py            # Upload/download via Supabase Storage
-│   │   ├── memory.py           # Notes, events, response generation, finalization
-│   │   └── chatbot.py          # Qdrant RAG → Claude historian
+├── backend/                        # Python FastAPI backend
+│   ├── main.py                     # FastAPI app, lifespan, CORS, WebSocket + voices endpoints
+│   ├── config.py                   # Env-driven config (ENV, ALLOWED_ORIGINS, BOT_HTTP_URL, etc.)
+│   ├── auth.py                     # Supabase JWT verification, DM permission helper
+│   ├── db.py                       # Async psycopg connection + query helpers
+│   ├── vectorization.py            # Qdrant client (with optional API key) + Nomic embedding wrapper
+│   ├── routers/                    # FastAPI routers
+│   │   ├── campaigns.py                # CRUD + audio queue + reindex
+│   │   ├── sessions.py                 # Lifecycle + transcript fetch
+│   │   ├── characters.py               # CRUD with kind=npc/pc filter
+│   │   ├── speakers.py                 # Discord speaker → role/PC mapping
+│   │   ├── glossary.py                 # CRUD with auto-vectorization
+│   │   ├── files.py                    # Upload/download via Supabase Storage
+│   │   ├── memory.py                   # Notes, events, response generation, finalization
+│   │   └── chatbot.py                  # Qdrant RAG → Claude historian
 │   ├── prompts/
-│   │   └── response.py     # Three-layer prompt assembly for NPC responses
+│   │   └── response.py             # Three-layer prompt assembly for NPC responses
 │   ├── stt/
-│   │   ├── deepgram_client.py  # Per-speaker Deepgram WebSocket manager
-│   │   └── vad_gate.py         # Silero VAD gate + transcript routing
-│   ├── voices.json         # (deprecated) Static voice list — replaced by ElevenLabs My Voices fetch
-│   └── .env                # SUPABASE_*, DEEPGRAM_API_KEY, ANTHROPIC_API_KEY, ELEVENLABS_API_KEY, NOMIC_API_KEY
+│   │   ├── deepgram_client.py          # Per-speaker Deepgram WebSocket manager
+│   │   └── vad_gate.py                 # Silero VAD gate + transcript routing
+│   ├── Dockerfile                  # Production image (Python 3.11-slim)
+│   ├── .dockerignore
+│   └── .env.example                # Template for local dev
 │
-├── frontend/               # React + Vite + TypeScript SPA
+├── frontend/                       # React + Vite + TypeScript SPA
 │   ├── src/
-│   │   ├── App.tsx                 # Router + auth gate
+│   │   ├── App.tsx                     # Router + auth gate + ToastProvider
 │   │   ├── lib/
-│   │   │   ├── supabase.ts         # Supabase client + apiFetch helper
-│   │   │   └── auth.tsx            # AuthProvider context
+│   │   │   ├── supabase.ts             # Supabase client + apiFetch (env-driven backend URL)
+│   │   │   ├── auth.tsx                # AuthProvider context
+│   │   │   └── toast.tsx               # Global toast notifications
 │   │   ├── pages/
-│   │   │   ├── Login.tsx           # Magic link sign-in
-│   │   │   ├── Campaigns.tsx       # Campaign list + create
-│   │   │   └── CampaignDetail.tsx  # Tab shell
+│   │   │   ├── Login.tsx               # Magic link sign-in
+│   │   │   ├── Campaigns.tsx           # Campaign list + create
+│   │   │   └── CampaignDetail.tsx      # Tab shell + Reindex button
 │   │   └── components/
-│   │       ├── SessionsTab.tsx     # Live transcript, presence panel, generate flow
-│   │       ├── CharactersTab.tsx   # NPC CRUD with voice picker + preview
-│   │       ├── PlayersTab.tsx      # PC CRUD + Discord speaker assignment
-│   │       ├── GlossaryTab.tsx     # Glossary entries CRUD
-│   │       ├── FilesTab.tsx        # File upload/download
-│   │       ├── MemoryTab.tsx       # Memory log (notes/events/responses)
-│   │       ├── ChatbotTab.tsx      # RAG chat interface
-│   │       └── AudioQueue.tsx      # Floating audio queue panel
+│   │       ├── SessionsTab.tsx         # Live transcript, presence panel, generate flow
+│   │       ├── CharactersTab.tsx       # NPC CRUD with voice picker + preview
+│   │       ├── PlayersTab.tsx          # PC CRUD + Discord speaker assignment
+│   │       ├── GlossaryTab.tsx         # Glossary entries CRUD
+│   │       ├── FilesTab.tsx            # File upload/download
+│   │       ├── MemoryTab.tsx           # Memory log (notes/events/responses)
+│   │       ├── ChatbotTab.tsx          # RAG chat interface (state lifted to parent)
+│   │       └── AudioQueue.tsx          # Floating audio queue panel
+│   ├── .env.example                # Template for local dev
 │   └── package.json
 │
 ├── db/
-│   ├── init.sql                    # (Phase 0) Local Postgres schema
-│   └── supabase_migration.sql      # (Phase 1) Full Supabase schema with RLS
+│   ├── init.sql                    # (Phase 0) Local Postgres schema (legacy)
+│   └── supabase_migration.sql      # Full Supabase schema with RLS, applied to both projects
 │
-├── docker-compose.yml              # Qdrant container
-├── README.md                       # Quick start
+├── deploy/                         # Phase 1.5 production deployment artifacts
+│   ├── docker-compose.yml              # Production stack: caddy + backend + bot + qdrant
+│   ├── Caddyfile                       # Reverse proxy with auto Let's Encrypt
+│   ├── env.example                     # Production env template
+│   ├── bootstrap.sh                    # One-time Hetzner box setup (Docker, ufw, deploy user)
+│   └── deploy.sh                       # Server-side pull-and-restart, called by GHA over SSH
+│
+├── .github/
+│   └── workflows/
+│       └── deploy.yml              # Build images → push to GHCR → SSH deploy to Hetzner
+│
+├── docker-compose.yml              # Local Qdrant container (dev only)
+├── README.md                       # Local quickstart
+├── DEPLOYMENT.md                   # Production deploy runbook
 └── DEVELOPER.md                    # This file
 ```
 
@@ -75,22 +92,36 @@ fablescribe/
 
 ## 2. Tech Stack
 
+### Application
 | Layer | Tech | Notes |
 |---|---|---|
-| Discord bot | Node.js, discord.js v14, @discordjs/voice 0.19.2, opusscript, libsodium-wrappers | v0.19.2 required for native AES-256-GCM crypto support |
-| Backend API | Python 3.11+, FastAPI, async psycopg | Single uvicorn process |
+| Discord bot | Node.js 20, discord.js v14, @discordjs/voice 0.19.2, opusscript, libsodium-wrappers | v0.19.2 required for native AES-256-GCM crypto support |
+| Backend API | Python 3.11, FastAPI, async psycopg | Single uvicorn process |
 | STT | Deepgram Nova-3 streaming WebSocket | Raw `websockets` library, not the SDK |
 | VAD | Silero VAD (ONNX, CPU-only) | Filters silence before audio reaches Deepgram |
 | LLM | Anthropic Claude (Sonnet 4) | Used for both response generation and chatbot |
 | TTS | ElevenLabs `eleven_v3` | With auto-prepended character direction tags |
-| Vector DB | Qdrant (self-hosted via Docker) | Single collection: `fablescribe_campaign_memory` |
+| Vector DB | Qdrant (self-hosted via Docker on each Hetzner box) | Single collection: `fablescribe_campaign_memory` |
 | Embeddings | Nomic Embed v1.5 (768 dims) | Via Nomic Atlas API — no local compute |
-| DB / Auth / Realtime / Storage | Supabase (Postgres + Auth + Realtime + Storage) | Hosted free tier |
+| DB / Auth / Realtime / Storage | Supabase (Postgres + Auth + Realtime + Storage) | Hosted free tier, two projects (dev + prod) |
 | Frontend | React 18, Vite 5, TypeScript, react-router-dom | No CSS framework — inline styles |
+
+### Infrastructure (Phase 1.5)
+| Layer | Tech | Notes |
+|---|---|---|
+| Frontend hosting | Vercel | Two projects, one per branch (`dev` ↔ `dev.fablescribe.io`, `main` ↔ `fablescribe.io`) |
+| Backend + bot + Qdrant hosting | Hetzner Cloud (CX22, Ubuntu 24.04) | Two boxes — one per env |
+| Reverse proxy / SSL | Caddy 2 (Docker) on each Hetzner box | Auto Let's Encrypt for `api.fablescribe.io` and `api-dev.fablescribe.io` |
+| DNS | Cloudflare (DNS-only mode) | Proxy off so Vercel + Caddy can issue certs directly |
+| Container registry | GitHub Container Registry (`ghcr.io/jakeverycool`) | Public images, no auth on Hetzner pulls |
+| CI / deploy | GitHub Actions | Build → push to GHCR → SSH deploy via `appleboy/ssh-action` |
+| Domain registrar | Porkbun | Nameservers delegated to Cloudflare |
 
 ---
 
 ## 3. Architecture Diagram
+
+### 3.1 — Application data flow (single environment)
 
 ```
 ┌──────────────────┐       ┌──────────────────────┐
@@ -108,7 +139,7 @@ fablescribe/
                                   ▼
 ┌──────────────────┐       ┌──────────────────────┐         ┌─────────────────┐
 │   React SPA      │──────▶│  Python Backend      │────────▶│  Deepgram       │
-│   (port 5173)    │  REST │  (FastAPI, port 8000)│◀────────│  Nova-3 stream  │
+│                  │  REST │  (FastAPI, port 8000)│◀────────│  Nova-3 stream  │
 │                  │       │                      │         └─────────────────┘
 │   - Auth         │       │  - Auth middleware   │
 │   - Campaign UI  │       │  - CRUD routers      │         ┌─────────────────┐
@@ -125,12 +156,92 @@ fablescribe/
        │              ▼                        ▼            │  Nomic Embed    │
        │      ┌───────────────┐        ┌───────────────┐    │  (Atlas API)    │
        └─────▶│   Supabase    │        │    Qdrant     │◀───┴─────────────────┘
-              │   - Postgres  │        │  (Docker      │
-              │   - Auth JWT  │        │   port 6333)  │
+              │   - Postgres  │        │  (Docker)     │
+              │   - Auth JWT  │        │               │
               │   - Realtime  │        │               │
               │   - Storage   │        └───────────────┘
               └───────────────┘
 ```
+
+### 3.2 — Deployment topology (Phase 1.5)
+
+```
+                       GitHub: jakeverycool/fablescribe
+                                     │
+                ┌────────────────────┴──────────────────────┐
+                │                                           │
+            dev branch                                  main branch
+                │                                           │
+                ▼                                           ▼
+        ┌───────────────┐                           ┌───────────────┐
+        │ GitHub Actions│                           │ GitHub Actions│
+        │  (deploy.yml) │                           │  (deploy.yml) │
+        └───────┬───────┘                           └───────┬───────┘
+                │                                           │
+                │ build + push                              │ build + push
+                ▼                                           ▼
+        ┌───────────────┐                           ┌───────────────┐
+        │     GHCR      │                           │     GHCR      │
+        │ :<sha>        │                           │ :<sha>        │
+        │ :dev (branch) │                           │ :main (branch)│
+        │ :dev (env)    │                           │ :prod (env)   │
+        └───────┬───────┘                           └───────┬───────┘
+                │                                           │
+                │  SSH deploy                               │  SSH deploy
+                ▼                                           ▼
+   ╔═════════════════════════╗                ╔═════════════════════════╗
+   ║   Hetzner DEV box       ║                ║   Hetzner PROD box      ║
+   ║   5.161.211.220         ║                ║   5.161.48.217          ║
+   ║                         ║                ║                         ║
+   ║  ┌──────────────────┐   ║                ║  ┌──────────────────┐   ║
+   ║  │ Caddy            │   ║                ║  │ Caddy            │   ║
+   ║  │ (Let's Encrypt)  │   ║                ║  │ (Let's Encrypt)  │   ║
+   ║  └─────────┬────────┘   ║                ║  └─────────┬────────┘   ║
+   ║            │            ║                ║            │            ║
+   ║  ┌─────────▼────────┐   ║                ║  ┌─────────▼────────┐   ║
+   ║  │ Backend (FastAPI)│◀──┼──┐             ║  │ Backend (FastAPI)│◀──┼──┐
+   ║  └─────────┬────────┘   ║  │             ║  └─────────┬────────┘   ║  │
+   ║            │ HTTP       ║  │             ║            │ HTTP       ║  │
+   ║  ┌─────────▼────────┐   ║  │             ║  ┌─────────▼────────┐   ║  │
+   ║  │ Bot (Node)       │   ║  │             ║  │ Bot (Node)       │   ║  │
+   ║  └──────────────────┘   ║  │             ║  └──────────────────┘   ║  │
+   ║            ▲            ║  │             ║            ▲            ║  │
+   ║            │ WS         ║  │             ║            │ WS         ║  │
+   ║            └────────────╫──┘             ║            └────────────╫──┘
+   ║  ┌──────────────────┐   ║                ║  ┌──────────────────┐   ║
+   ║  │ Qdrant           │   ║                ║  │ Qdrant           │   ║
+   ║  └──────────────────┘   ║                ║  └──────────────────┘   ║
+   ║                         ║                ║                         ║
+   ║  api-dev.fablescribe.io ║                ║  api.fablescribe.io     ║
+   ╚═════════════════════════╝                ╚═════════════════════════╝
+                ▲                                           ▲
+                │                                           │
+   ┌────────────┴────────────┐                ┌─────────────┴───────────┐
+   │  Supabase Dev project   │                │  Supabase Prod project  │
+   │  (qdbytyxvlsqtzpfkdpxd) │                │  (jgfwglxufcxchtiqbzwu) │
+   │  - independent data     │                │  - independent data     │
+   │  - own auth users       │                │  - own auth users       │
+   │  - own storage buckets  │                │  - own storage buckets  │
+   └─────────────────────────┘                └─────────────────────────┘
+                ▲                                           ▲
+                │ Realtime + apiFetch                       │ Realtime + apiFetch
+                │                                           │
+   ┌────────────┴────────────┐                ┌─────────────┴───────────┐
+   │  Vercel: fablescribe-dev│                │ Vercel: fablescribe-prod│
+   │  built from `dev` branch│                │ built from `main` branch│
+   │  dev.fablescribe.io     │                │ fablescribe.io          │
+   │                         │                │ www.fablescribe.io      │
+   │  env: dev Supabase URL  │                │  env: prod Supabase URL │
+   │       api-dev backend   │                │       api backend       │
+   └─────────────────────────┘                └─────────────────────────┘
+```
+
+**Isolation guarantees:**
+- Cross-environment requests are blocked at the backend by CORS (only the env's own frontend origin is allowed)
+- Each Hetzner box has its own `.env` with environment-specific Supabase credentials
+- Two separate Discord bot applications (`Fablescribe Dev#1813` for dev, `Fablescribe#2729` for prod)
+- Two separate Anthropic API keys
+- Two separate Supabase projects with fully independent auth, data, and storage
 
 ---
 
@@ -327,9 +438,11 @@ When the DM clicks "Generate Response":
 `AuthProvider` wraps the app, subscribes to Supabase auth state changes, exposes `{session, user, loading, signOut}` via context.
 
 ### API client ([frontend/src/lib/supabase.ts](frontend/src/lib/supabase.ts))
-- `supabase` — the Supabase JS client (auth + realtime)
-- `apiFetch(path, options)` — wrapper around `fetch` that automatically attaches the user's JWT as `Authorization: Bearer ...` and sets `Content-Type: application/json` when there's a string body
-- `API_BASE` is derived from `window.location.hostname` so the same build works on localhost or LAN IP
+- `supabase` — the Supabase JS client. Reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from build-time env vars (Vite injects these from `.env.local` locally and from Vercel project settings in production). **Throws loudly at module load time if either is missing**, so misconfigured deploys fail the build instead of silently authenticating against the wrong project.
+- `apiFetch(path, options)` — wrapper around `fetch` that automatically attaches the user's JWT as `Authorization: Bearer ...` and sets `Content-Type: application/json` when there's a string body. Skips Content-Type for `FormData` bodies (file uploads).
+- `API_BASE` resolution order:
+  1. `VITE_BACKEND_URL` env var (set per Vercel project — `https://api.fablescribe.io` for prod, `https://api-dev.fablescribe.io` for dev)
+  2. Falls back to `${window.location.protocol}//${window.location.hostname}:8000` for local dev / LAN access
 
 ### Tabs
 
@@ -557,37 +670,115 @@ Then open `http://localhost:5173`.
 
 ## 10. Environment Variables
 
+Each service has a `.env.example` checked into the repo. Copy to `.env` (or `.env.local` for the frontend) and fill in real values.
+
 ### `backend/.env`
 ```
+ENV=local                                      # local | dev | prod
 SUPABASE_URL=https://<project>.supabase.co
-SUPABASE_ANON_KEY=<sb_publishable_...>
-SUPABASE_SERVICE_ROLE_KEY=<sb_secret_...>
-SUPABASE_DB_URL=postgresql://postgres:<password>@db.<project>.supabase.co:5432/postgres
-DEEPGRAM_API_KEY=<...>
-ANTHROPIC_API_KEY=<sk-ant-...>
-ELEVENLABS_API_KEY=<sk_...>            # Starter+ tier required, with voices_read permission
-NOMIC_API_KEY=<nk-...>
-QDRANT_URL=http://localhost:6333
+SUPABASE_ANON_KEY=sb_publishable_xxx
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_xxx
+# Use the Supabase Session pooler connection string (IPv4-routable),
+# NOT the direct connection — Hetzner Cloud doesn't enable IPv6 outbound.
+SUPABASE_DB_URL=postgresql://postgres.<project>:<password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres
+DEEPGRAM_API_KEY=
+ANTHROPIC_API_KEY=sk-ant-xxx
+ELEVENLABS_API_KEY=sk_xxx                      # Starter+ tier, with voices_read permission
+NOMIC_API_KEY=nk-xxx
+QDRANT_URL=http://localhost:6333               # On Hetzner: http://qdrant:6333 (docker network)
+QDRANT_API_KEY=                                # Optional, only if Qdrant has API key auth enabled
 BOT_SECRET=fablescribe-bot-secret-phase1
+BOT_HTTP_URL=http://127.0.0.1:3001             # On Hetzner: http://bot:3001 (docker network)
+ALLOWED_ORIGINS=                               # Comma-separated; LAN/localhost regex always allowed
 ```
 
 ### `bot/.env`
 ```
-DISCORD_TOKEN=<...>
-DISCORD_CLIENT_ID=<app_id>
-BACKEND_WS_URL=ws://127.0.0.1:8000/ws/bot
+DISCORD_TOKEN=
+DISCORD_CLIENT_ID=
+BACKEND_WS_URL=ws://127.0.0.1:8000/ws/bot      # On Hetzner: ws://backend:8000/ws/bot
 BOT_SECRET=fablescribe-bot-secret-phase1
+ENV=local
+```
+
+### `frontend/.env.local`
+```
+VITE_SUPABASE_URL=https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_xxx
+# Optional. If unset, derives from window.location.hostname:8000 (works for LAN dev).
+# In production set per Vercel project:
+#   dev:  https://api-dev.fablescribe.io
+#   prod: https://api.fablescribe.io
+# VITE_BACKEND_URL=
+```
+
+> **Important — Supabase DB connection on Hetzner:** Use the **Session pooler** connection string (`postgres.<project>@aws-X.pooler.supabase.com:5432`), not the direct (`db.<project>.supabase.co:5432`). Hetzner Cloud doesn't route IPv6 outbound by default, and Supabase's direct hostname resolves to IPv6 first, causing `Network is unreachable` errors. The pooler endpoint is IPv4 and just works.
+
+---
+
+## 11. Production Deployment (Phase 1.5)
+
+For a complete deployment runbook (DNS, secrets, rollback procedure), see [DEPLOYMENT.md](DEPLOYMENT.md). High-level summary here:
+
+### CI/CD pipeline
+
+Push to `dev` or `main` triggers `.github/workflows/deploy.yml`:
+
+1. **Build job** — checks out, builds the backend and bot Docker images, pushes to GHCR with three tags:
+   - `:<commit_sha>` — immutable, used by the deploy step for the exact version
+   - `:<branch>` — `dev` or `main`, useful for git-history clarity
+   - `:<env>` — `dev` or `prod` (different from branch for `main` ↔ `prod` mapping)
+2. **Deploy job** — SSHs into the matching Hetzner box (`DEV_SSH_HOST` or `PROD_SSH_HOST` from GitHub secrets) as the `deploy` user, runs `/opt/fablescribe/deploy.sh <commit_sha>`, which pulls the new images and restarts the compose stack.
+
+### Hetzner box layout
+
+Each box runs a single `docker compose` stack at `/opt/fablescribe/`:
+- `caddy` — port 80/443, auto-issues Let's Encrypt for `api.fablescribe.io` (or `api-dev.fablescribe.io`), reverse-proxies `/` to `backend:8000`
+- `backend` — pulled from GHCR, env loaded from `/opt/fablescribe/.env`
+- `bot` — pulled from GHCR, connects to `backend` over the docker network
+- `qdrant` — local Docker volume, never exposed publicly
+
+The `.env` file lives **only on the box** (not in git), and contains environment-specific Supabase credentials, the Discord bot token for that env, the Anthropic key for that env, and the Caddy `API_DOMAIN` so SSL is issued for the right hostname.
+
+### Frontend hosting
+
+Two Vercel projects, both pointed at the same GitHub repo but built from different branches:
+- `fablescribe-dev` — built from `dev` branch, served at `dev.fablescribe.io`
+- `fablescribe-prod` — built from `main` branch, served at `fablescribe.io` and `www.fablescribe.io`
+
+Each Vercel project has its own `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_BACKEND_URL` env vars baked in at build time. **A Vercel redeploy is required to pick up env var changes.**
+
+### Manual ops on a Hetzner box
+
+```bash
+# SSH in
+ssh -i ~/.ssh/fablescribe_deploy deploy@<box_ip>
+
+# View running containers
+cd /opt/fablescribe && docker compose ps
+
+# Tail logs
+docker compose logs -f backend
+docker compose logs -f bot
+
+# Pull and restart (uses :env tag fallback if IMAGE_TAG isn't set — see compose file)
+docker compose pull && docker compose up -d
+
+# Or pin a specific commit
+IMAGE_TAG=<sha> docker compose up -d backend
 ```
 
 ---
 
-## 11. Known Quirks & Decisions
+## 12. Known Quirks & Decisions
+
+### Application
 
 - **`localhost` vs `127.0.0.1` on macOS**: Node resolves `localhost` to IPv6 `::1` while uvicorn defaults to IPv4 `0.0.0.0`. Always use `127.0.0.1` in connection URLs to avoid silent connection failures.
 
 - **Bot session_id mapping**: The bot generates a random UUID session ID at `/join` time, but this won't match any session in the DB. We solve this by having `vad_gate._on_transcript` dynamically resolve the active session ID on each insert (cached for 2 seconds). This means the bot can join before or after the DM creates a session.
 
-- **VAD cache TTL**: 2 seconds. Pause/resume reflects within 2 seconds at most. Trade-off between freshness and DB load.
+- **VAD cache TTL**: 2 seconds. Pause/resume reflects within 2 seconds at most. Trade-off between freshness and remote DB load.
 
 - **Deepgram keyterm cache**: Loaded once per session into `_session_keyterms`. Glossary edits during a session don't update active streams (Phase 1 limitation).
 
@@ -605,10 +796,31 @@ BOT_SECRET=fablescribe-bot-secret-phase1
 
 - **`@discordjs/voice` v0.18.x is broken**: Voice connections cycle forever without reaching Ready. Must use v0.19.2+ which has native AES-256-GCM crypto support. See [bot/package.json](bot/package.json).
 
+### Deployment / Infrastructure (Phase 1.5)
+
+- **Hetzner IPv6 → Supabase direct connection fails** with `Network is unreachable`. Hetzner Cloud doesn't enable IPv6 outbound routing by default, and Supabase's direct DB hostname (`db.<project>.supabase.co`) resolves to IPv6 first. **Always use the Supabase Session pooler connection string** (`postgres.<project>@aws-X.pooler.supabase.com:5432`) on Hetzner — it's IPv4-routable.
+
+- **Cloudflare proxy mode breaks Let's Encrypt issuance.** All DNS records that point at Vercel or Caddy must be in **DNS-only mode (grey cloud)**, not proxied. Caddy and Vercel both issue certs directly, which requires direct A/CNAME resolution.
+
+- **Vercel apex IP conflicts.** Vercel is rolling out new anycast IPs (`44.227.65.245`, `44.227.76.166`) but its UI still expects the older `76.76.21.21` for apex domains. If Vercel reports "Invalid Configuration" with extra A records flagged, delete the new IPs and keep only `76.76.21.21`.
+
+- **GHCR images must be public** for the Hetzner deploy boxes to pull them without auth. After the **first** GHA build, manually flip `fablescribe-backend` and `fablescribe-bot` packages to Public via the GitHub Packages UI. The Docker images don't contain secrets — those come from `.env` at runtime.
+
+- **Compose `IMAGE_TAG` fallback** is `${ENV}` (resolves to `dev` or `prod`), not `latest`. The build pipeline never publishes a `:latest` tag — it publishes three tags per build (`:<sha>`, `:<branch>`, `:<env>`). Manual `docker compose up -d backend` without an explicit `IMAGE_TAG` env var will pick up the `:<env>` tag, which is always the most recent successful build for that environment.
+
+- **Vercel env vars are baked in at build time.** Changing them in the Vercel project settings has no effect until you trigger a redeploy. If a frontend is calling the wrong backend, it's almost certainly stale env vars from a build that ran before the env was corrected.
+
+- **Supabase Auth redirect URL** must match the deployed domain. After deploying, set the **Site URL** in each Supabase project's Authentication → URL Configuration page (`https://dev.fablescribe.io` for dev, `https://www.fablescribe.io` for prod), and add the corresponding `https://<domain>/**` patterns to **Redirect URLs**. Otherwise magic links bake in `localhost:3000` and break.
+
+- **Two separate Discord bot applications** are required for env isolation. A single Discord token can only be logged in from one place at a time. The dev box uses `Fablescribe Dev#1813`, the prod box uses `Fablescribe#2729`. Both can be invited to the same test server.
+
+- **CORS isolation is enforced at the backend.** The dev backend's `ALLOWED_ORIGINS=https://dev.fablescribe.io` and prod's is `https://fablescribe.io,https://www.fablescribe.io`. Cross-environment preflight requests get rejected at the backend before any handler runs, preventing accidental dev → prod data leaks via misconfigured frontends.
+
 ---
 
-## 12. What's NOT Built Yet (Phase 2+)
+## 13. What's NOT Built Yet (Phase 2+)
 
+### Product
 - Multi-user invite codes & player join flow
 - Player-facing dashboard / read-only views
 - Subscription tier enforcement
@@ -620,16 +832,26 @@ BOT_SECRET=fablescribe-bot-secret-phase1
 - Drag-to-reorder audio queue
 - Glossary filtering / bulk import / linking visualizer
 - Cross-session memory linking suggestions
-- Cloud deployment (Phase 1.5 scope)
-- A re-vectorization / backfill endpoint for entries created before vectorization was wired in
+
+### Operations / Infrastructure
+- **Automated migration runner** — schema changes are still applied manually via the Supabase SQL Editor on each project. Phase 2 should add Supabase CLI migrations + a `scripts/migrate.sh` helper run from the deploy pipeline.
+- **Uptime monitoring** — Uptime Robot was suggested in the Phase 1.5 doc but not set up. Should add HTTP monitors for `/health` on both API domains.
+- **Per-env API key separation for ElevenLabs / Deepgram / Nomic** — currently shared between dev and prod. Anthropic is correctly split.
+- **Backup strategy for the Hetzner Qdrant volumes** — currently relying on the ability to rebuild from Postgres via the `/reindex` endpoint, but no automated backups.
+- **Rollback automation** — `DEPLOYMENT.md` documents the manual rollback steps but there's no one-command revert.
+- **Structured logging / observability** — backend just uses Python's `logging` module to stdout, captured by Docker. No centralized log aggregation.
+- **Schema drift detection** — nothing alerts if dev and prod databases diverge.
 
 ---
 
-## 13. References
+## 14. References
 
 - Pre-planning doc: [READ_ME/fablescribe-preplanning.md](READ_ME/fablescribe-preplanning.md)
 - Phase 0 build doc: [READ_ME/fablescribe-phase-0.md](READ_ME/fablescribe-phase-0.md)
 - Phase 1 build doc: [READ_ME/fablescribe-phase-1.md](READ_ME/fablescribe-phase-1.md)
+- Phase 1.5 build doc: [READ_ME/fablescribe-phase-1-5.md](READ_ME/fablescribe-phase-1-5.md)
+- Deployment runbook: [DEPLOYMENT.md](DEPLOYMENT.md)
+- Local quickstart: [README.md](README.md)
 - ElevenLabs TTS best practices: https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices
 - ElevenLabs v3 character direction: https://elevenlabs.io/blog/eleven-v3-character-direction
-- Reference voice bot project: [REF/DiscordBuddy/](REF/DiscordBuddy/)
+- Reference voice bot project: [REF/DiscordBuddy/](REF/DiscordBuddy/) (gitignored, not in repo)
