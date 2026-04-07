@@ -15,6 +15,8 @@
 ## 1. Scope
 
 **In scope:**
+- **Multi-server bot foundation** — bot is public, anyone can install it to their own Discord server, campaigns are portable across servers, sessions are bound to the DM (not the guild) so a DM can `/join` from any server with the bot installed (see §3.0)
+- **Discord account linking** — users connect their Fablescribe and Discord identities via OAuth so the bot can resolve who owns each `/join`
 - Open email signup (not restricted to Jake)
 - Campaign invite codes and join flow
 - Player role implementation with read-only access to campaign memory
@@ -35,6 +37,10 @@
 
 ## 2. Deliverables
 
+- The Fablescribe bot is a public Discord application — any DM can add it to any server they have permission to invite bots to
+- Users link their Discord account once via OAuth and can then `/join` from any server the bot is in
+- Two unrelated DMs can run sessions simultaneously in two unrelated Discord servers without cross-talk
+- A single DM can move their campaign between Discord servers session-to-session — the campaign is not pinned to a specific guild
 - Anyone can sign up with an email
 - A DM can generate a campaign invite code and share it
 - A player can enter that code and join the campaign
@@ -47,6 +53,88 @@
 ---
 
 ## 3. Build Steps
+
+### 3.0 — Multi-server bot foundation (DM-bound, campaign-portable)
+
+**Why this is first:** Phase 1 was hardcoded to Jake's single Discord server. The backend's session resolver picks the most recently started active session **globally**, and the bot's playback handler defaults to "the first active voice connection." Both break the moment a second DM tries to use the product. This step has to land before any of the user-facing Phase 2 work, otherwise none of it is testable end-to-end.
+
+**Design choice:** campaigns are **not** tied to a specific Discord server. A DM can run the same campaign from any server that has the Fablescribe bot installed. The binding is **DM user → active session**, not guild → session. This means a DM can host a one-shot in their friend's server one week and their own server the next, with the same campaign and continuous memory.
+
+**Hard Discord platform limitation to communicate:** a single bot user can only be in **one voice channel per server at a time**. If two Fablescribe DMs share one Discord server, only one of them can run a session there at any moment. Solo DMs never notice this; shared communities have to coordinate. This is a Discord rule, not a Fablescribe choice — the only workaround is running multiple bot processes, which is out of scope.
+
+**Build steps:**
+
+1. **Make the bot application public.** In the Discord Developer Portal → Bot tab, toggle **Public Bot** ON for both the prod and dev applications. Generate the OAuth install URL under OAuth2 → URL Generator with scopes `bot applications.commands` and permissions `Connect, Speak, Use Voice Activity, Send Messages, Read Message History` (permissions integer `3148800`). Save both URLs in the docs.
+
+2. **Add Discord account linking to the user model.**
+   ```sql
+   ALTER TABLE public.users ADD COLUMN discord_user_id TEXT UNIQUE;
+   ```
+   No data backfill needed — existing users get a `NULL` and link via the new flow when they need to.
+
+3. **Build the Discord OAuth link flow** in the frontend under **Settings → Integrations → Link Discord Account**. Uses the `identify` scope only (no permissions on the user's behalf — we just need their Discord user ID). After the user approves, the frontend POSTs the OAuth code to a new backend endpoint `POST /me/discord/link` which exchanges it for a Discord user ID and writes it to `users.discord_user_id`. Show a clear success/error state.
+
+4. **Add an unlink endpoint** `DELETE /me/discord` in case the user wants to disconnect or relink with a different Discord account.
+
+5. **Refactor the WebSocket audio_meta protocol** to include the DM's Discord identity and the guild context:
+   ```json
+   {
+     "type": "audio_meta",
+     "dm_discord_user_id": "311155914675585024",   // who ran /join — backend uses this to find the active session
+     "speaker_discord_user_id": "abc123",          // who is currently speaking — used for campaign_speakers mapping
+     "speaker_display_name": "Alex",
+     "guild_id": "692522943267471381",             // for routing playback back to the right voice channel
+     "chunk_ts": "2026-04-07T01:38:28Z"
+   }
+   ```
+   The bot grabs the DM's Discord user ID from `interaction.user.id` at `/join` time and includes it in every metadata frame for the session.
+
+6. **Refactor `vad_gate._resolve_active_session`** to be DM-scoped. Cache becomes `dict[dm_discord_user_id → (session_id, paused)]`. Resolution query:
+   ```sql
+   SELECT s.id, s.paused
+   FROM sessions s
+   JOIN campaigns c ON c.id = s.campaign_id
+   JOIN campaign_members cm ON cm.campaign_id = c.id
+   JOIN users u ON u.id = cm.user_id
+   WHERE u.discord_user_id = %s
+     AND cm.campaign_role = 'dm'
+     AND s.status = 'active'
+   ORDER BY s.started_at DESC
+   LIMIT 1
+   ```
+   If no row → drop the audio with a warning logged. If multiple campaigns have active sessions for the same DM (rare), pick the most recently started.
+
+7. **Refactor `/join` error handling on the bot side** to handle three failure modes with clear Discord replies:
+   - DM hasn't linked their Discord account → *"Your Discord account isn't linked to Fablescribe. Go to https://fablescribe.io/settings/integrations to link it, then try again."*
+   - DM has no active session → *"You don't have any active session. Start one in the dashboard at https://fablescribe.io, then run `/join`."*
+   - The bot is already in a voice channel in this guild (used by another DM) → *"Fablescribe is currently being used by another DM in this server. Please wait until they finish their session."*
+   The bot does an HTTP precheck against the backend (e.g. `GET /bot/precheck?dm_discord_user_id=X`) at `/join` time so it can give the right error message before joining voice.
+
+8. **Refactor the bot's session storage** to allow multiple guild voice connections simultaneously. The existing `sessions: Map<guildId, Session>` already supports this — we just need to make sure the bot's WebSocket reconnect logic and session cleanup don't accidentally tear down other guilds' connections.
+
+9. **Refactor backend `/play` to pass the actual guild_id.** When a session is created (or when the bot connects), capture the guild_id of the voice connection and persist it on `sessions.discord_guild_id` (new column, NULLable, only set during an active session). When the DM clicks Play in the audio queue, the backend looks up the most recent active session for that campaign, reads its `discord_guild_id`, and passes that explicit guild_id to the bot's `/play` endpoint instead of `"any"`.
+   ```sql
+   ALTER TABLE public.sessions ADD COLUMN discord_guild_id TEXT;
+   ```
+
+10. **Refactor `playAudioInGuild` in the bot** to require an explicit `guild_id` and 400 if the bot has no voice connection for that guild.
+
+11. **Build a "Connect Discord" UI in the campaign detail page** that just shows the Fablescribe bot OAuth install URL with a copy button: *"Add the Fablescribe bot to any Discord server you want to run sessions in. Once added, link your Discord account in Settings → Integrations and you can `/join` from any server."* Two steps, both one-time per user.
+
+12. **End-to-end test:**
+    1. Sign up as User A. Link User A's Discord account.
+    2. Add the Fablescribe bot to User A's personal Discord server using the install URL.
+    3. Sign up as User B. Link User B's Discord account.
+    4. User B adds the Fablescribe bot to a **completely different** Discord server.
+    5. User A creates a campaign, starts a session, runs `/join` in their server. Verify audio routes to User A's session.
+    6. Simultaneously: User B creates a separate campaign, starts a session, runs `/join` in their server. Verify audio routes to User B's session, **not** User A's.
+    7. Both users finalize a response. Verify each user's audio plays in their own server.
+    8. User A ends their session. Verify User B's session is unaffected.
+    9. User A starts a new session and runs `/join` in **User B's server** (where the bot also lives). Verify User A's audio routes to User A's most recent active session, not User B's.
+
+**Definition of done for 3.0:** Two unrelated users in two unrelated Discord servers can run sessions simultaneously without any cross-routing. A single user can move their campaign between Discord servers freely.
+
+---
 
 ### 3.1 — Open signup and email verification
 
@@ -207,6 +295,11 @@ Run this as a simulated multi-user scenario:
 
 ## 5. Definition of Done
 
+- [ ] The Fablescribe bot is a public Discord application and the install URL is documented in the README
+- [ ] Users can link their Discord account via OAuth in Settings → Integrations
+- [ ] Two unrelated DMs in two unrelated Discord servers can run sessions simultaneously without cross-routing
+- [ ] A single DM can run their campaign from any Discord server the bot is in (no per-campaign guild binding)
+- [ ] `/join` gives clear error messages for the three failure modes (no Discord link, no active session, bot already in use in this guild)
 - [ ] Anyone can sign up and land on a welcome page
 - [ ] Campaign invites work via short codes
 - [ ] Players have correct read-only access enforced at API and RLS levels
@@ -216,13 +309,25 @@ Run this as a simulated multi-user scenario:
 - [ ] Monthly reset of ElevenLabs and Deepgram usage is implemented and tested
 - [ ] Discord consent message posts on bot join
 - [ ] Admin panel lets Jake manage users and view usage
-- [ ] Step 3.9 integration test passes
+- [ ] Step 3.0 multi-server test passes
+- [ ] Step 3.9 multi-user end-to-end test passes
 - [ ] No Phase 1 functionality has regressed
-- [ ] README is updated with signup instructions and tier explanation
+- [ ] README is updated with signup instructions, the bot install URL, and tier explanation
 
 ---
 
 ## 6. Known Gotchas
+
+### Multi-server bot (3.0)
+
+- **One bot, one voice channel per guild.** A Discord bot user can only be in one voice channel per server at a time. Two Fablescribe DMs in the same server cannot run sessions simultaneously. Document this clearly and surface it in the `/join` error message. Sharding doesn't help — the constraint is per bot user, not per process.
+- **`discord_user_id` is unique per Fablescribe user.** A single Discord identity can only be linked to one Fablescribe account. If a user wants to switch, they have to unlink from the old account first. This prevents shadow-account exploits where someone proxies sessions through a friend's free account.
+- **A DM with multiple active sessions** (say, two separate campaigns in two browser tabs) creates ambiguity for `/join`. Pick the most recently started session and show the campaign name in the `/join` reply so the DM can tell which one the bot just attached to. If they wanted the other one, they end the wrong session and re-run `/join`.
+- **The bot persists the active voice connection per guild in memory.** If the bot process restarts mid-session, all voice connections drop and DMs need to re-run `/join`. Acceptable for Phase 2; address with state persistence in Phase 3+.
+- **Discord OAuth `identify` scope is read-only.** We never get permission to act on the user's behalf — we only learn their Discord user ID. If we want richer Discord integrations later (e.g., posting transcripts to a channel as the user), we'd need to add scopes and handle token refresh, which is out of scope for Phase 2.
+- **The bot's HTTP precheck endpoint** at `GET /bot/precheck?dm_discord_user_id=X` lets the bot give clear `/join` errors before joining voice. This needs to be public (no auth) but should rate-limit per IP to prevent abuse — anyone could otherwise probe whether a given Discord user has linked to Fablescribe.
+
+### Permissions & data isolation
 
 - **RLS with auth.uid() is your friend.** Supabase makes `auth.uid()` available in RLS expressions. Use it for the "am I a member of this campaign" check. Don't try to enforce membership in the backend alone — if the frontend ever queries Supabase directly, RLS is the only thing standing between users and other users' data.
 - **Rotating an invite code must not kick existing members.** Only the code itself changes; `campaign_members` rows persist.
@@ -243,6 +348,7 @@ These should be resolved before starting Phase 2:
 3. **Who pays for ElevenLabs and Deepgram during the free tier?** Jake absorbs the cost up to the caps, but the caps must be low enough that Jake's own budget isn't at risk if 50 people sign up tomorrow. Math to work out for each service: `max_free_users × max_usage_per_month × per_unit_price ≤ Jake's budget`. ElevenLabs is the bigger risk per-user; Deepgram is cheap per-minute but scales with every session minute.
 4. **Should players see campaign files at all by default?** The recommendation is dm_only default with per-file override. Confirm or override.
 5. **Should player access include the live session view at all** (e.g., a "waiting room" page that just shows "the DM is running a session")? Or is the player experience purely post-session review? The latter is simpler.
+6. **Two DMs sharing one Discord server — communicate the limitation how?** Discord only allows the Fablescribe bot to occupy one voice channel per server at a time. If two Fablescribe DMs share a server, only one can run a session at a time. Options: (a) just document it, let DMs coordinate; (b) show an in-app warning when the bot is already in use elsewhere in the same guild; (c) build a "queue" / waiting list. Recommendation: (b) — surface it in the bot's `/join` reply so users hit a clear error rather than confusing silence.
 
 ---
 
