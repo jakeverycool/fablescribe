@@ -10,18 +10,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0f0f0f",
-          color: "#666",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        Loading...
+      <div className="loading-screen">
+        <div className="spinner" />
+        <span>Loading…</span>
       </div>
     );
   }
