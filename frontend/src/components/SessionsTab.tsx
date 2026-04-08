@@ -76,6 +76,12 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
   const [promoteAnnotation, setPromoteAnnotation] = useState("");
   const [promoting, setPromoting] = useState(false);
 
+  // Speak as NPC (DM-authored, no Claude) state
+  const [showSpeak, setShowSpeak] = useState(false);
+  const [speakCharacterId, setSpeakCharacterId] = useState("");
+  const [speakText, setSpeakText] = useState("");
+  const [speaking, setSpeaking] = useState(false);
+
   const loadSessions = async () => {
     const r = await apiFetch(`/campaigns/${campaignId}/sessions`);
     if (r.ok) {
@@ -99,6 +105,7 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
       const data = await r.json();
       setCharacters(data);
       if (data.length > 0 && !genCharacterId) setGenCharacterId(data[0].id);
+      if (data.length > 0 && !speakCharacterId) setSpeakCharacterId(data[0].id);
     }
   };
 
@@ -308,6 +315,45 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
     setFinalizing(false);
   };
 
+  // ── Speak as NPC ──────────────────────────────────────────────────────
+  // DM-authored line: skips Claude entirely, sends typed text straight to
+  // ElevenLabs and queues the audio. Backend auto-prepends the character's
+  // direction tag the same way it does for generated responses.
+  const openSpeak = () => {
+    setSpeakText("");
+    setShowSpeak(true);
+  };
+
+  const handleSpeak = async () => {
+    if (!speakCharacterId || !speakText.trim()) return;
+    setSpeaking(true);
+    const r = await apiFetch(`/campaigns/${campaignId}/memory/finalize-response`, {
+      method: "POST",
+      body: JSON.stringify({
+        selected_transcript_ids: [],
+        character_id: speakCharacterId,
+        additional_context: null,
+        final_text: speakText.trim(),
+        session_id: activeSession?.id || null,
+        present_character_ids: [],
+      }),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      setShowSpeak(false);
+      setSpeakText("");
+      if (data.tts_error) {
+        toast.show(`Saved to memory, but TTS failed: ${data.tts_error}`, "error");
+      } else {
+        toast.show("Line queued for playback", "success");
+      }
+    } else {
+      const err = await r.json().catch(() => ({}));
+      toast.show(`Speak failed: ${err.detail || `HTTP ${r.status}`}`, "error");
+    }
+    setSpeaking(false);
+  };
+
   const handlePromote = async () => {
     if (selected.size === 0) return;
     setPromoting(true);
@@ -388,6 +434,9 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
               </div>
               {activeSession.status === "active" && (
                 <>
+                  <button onClick={openSpeak} className="btn btn--gold btn--sm">
+                    Speak as NPC
+                  </button>
                   <button onClick={handlePause} className="btn btn--secondary btn--sm">
                     {activeSession.paused ? "Resume STT" : "Pause STT"}
                   </button>
@@ -579,6 +628,60 @@ export default function SessionsTab({ campaignId }: { campaignId: string }) {
                     </div>
                   </>
                 )}
+              </div>
+            )}
+
+            {showSpeak && (
+              <div className="inline-panel">
+                <div className="inline-panel__title">Speak as NPC</div>
+                <div className="inline-panel__hint">
+                  Type the line yourself — skips Claude entirely. The character's
+                  voice direction will be auto-applied by ElevenLabs.
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Character</label>
+                  <select
+                    value={speakCharacterId}
+                    onChange={(e) => setSpeakCharacterId(e.target.value)}
+                    className="form-select"
+                    style={{ width: "100%" }}
+                  >
+                    {characters.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.elevenlabs_voice_id ? "(has voice)" : "(no voice)"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Line</label>
+                  <textarea
+                    value={speakText}
+                    onChange={(e) => setSpeakText(e.target.value)}
+                    placeholder="What does the NPC say?"
+                    className="form-textarea"
+                    style={{ minHeight: 120 }}
+                    autoFocus
+                  />
+                </div>
+
+                <div className="form-panel__actions">
+                  <button
+                    onClick={handleSpeak}
+                    disabled={speaking || !speakCharacterId || !speakText.trim()}
+                    className="btn btn--gold"
+                  >
+                    {speaking ? "Sending…" : "Generate Audio & Save"}
+                  </button>
+                  <button
+                    onClick={() => setShowSpeak(false)}
+                    className="btn btn--ghost"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
