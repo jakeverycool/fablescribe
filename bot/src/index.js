@@ -259,14 +259,13 @@ async function playAudioInGuild(guildId, audioUrl) {
     session = sessions.get(guildId);
   }
   if (!session) {
-    console.error("No active session for playback");
-    return false;
+    return { success: false, error: "No active voice session — run /join first" };
   }
 
   try {
     // Fetch the audio file
     const resp = await fetch(audioUrl);
-    if (!resp.ok) throw new Error(`Failed to fetch audio: ${resp.status}`);
+    if (!resp.ok) throw new Error(`Failed to fetch audio: HTTP ${resp.status}`);
 
     const arrayBuffer = await resp.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -286,20 +285,21 @@ async function playAudioInGuild(guildId, audioUrl) {
     // Play
     player.play(resource);
 
-    return new Promise((resolve) => {
-      player.on(AudioPlayerStatus.Idle, () => {
-        resolve(true);
-      });
+    return await new Promise((resolve) => {
+      player.on(AudioPlayerStatus.Idle, () => resolve({ success: true }));
       player.on("error", (error) => {
         console.error("Playback error:", error.message);
-        resolve(false);
+        resolve({ success: false, error: `Playback error: ${error.message}` });
       });
       // Timeout after 60 seconds
-      setTimeout(() => resolve(false), 60000);
+      setTimeout(
+        () => resolve({ success: false, error: "Playback timed out after 60s" }),
+        60000,
+      );
     });
   } catch (err) {
     console.error("Error playing audio:", err.message);
-    return false;
+    return { success: false, error: err.message };
   }
 }
 
@@ -331,10 +331,10 @@ const httpServer = http.createServer(async (req, res) => {
         }
 
         console.log(`Playing audio in guild ${guild_id}`);
-        const success = await playAudioInGuild(guild_id, audio_url);
+        const result = await playAudioInGuild(guild_id, audio_url);
 
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success }));
+        res.end(JSON.stringify(result));
       } catch (err) {
         console.error("Play request error:", err.message);
         res.writeHead(500);

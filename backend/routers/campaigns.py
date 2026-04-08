@@ -265,16 +265,6 @@ async def play_queue_item(
                 json={"guild_id": "any", "audio_url": audio_url},
                 timeout=65.0,
             )
-        if resp.status_code == 200 and resp.json().get("success"):
-            await db.execute(
-                "UPDATE memory_entries SET queue_status = 'played', played_at = now() WHERE id = %s",
-                (entry_id,),
-            )
-        else:
-            await db.execute(
-                "UPDATE memory_entries SET queue_status = 'pending' WHERE id = %s",
-                (entry_id,),
-            )
     except Exception as e:
         logger.error(f"Bot play request failed: {e}")
         await db.execute(
@@ -283,7 +273,24 @@ async def play_queue_item(
         )
         raise HTTPException(500, f"Bot playback failed: {str(e)}")
 
-    return await db.fetch_one("SELECT * FROM memory_entries WHERE id = %s", (entry_id,))
+    bot_payload = resp.json() if resp.status_code == 200 else {}
+    if resp.status_code == 200 and bot_payload.get("success"):
+        await db.execute(
+            "UPDATE memory_entries SET queue_status = 'played', played_at = now() WHERE id = %s",
+            (entry_id,),
+        )
+        return await db.fetch_one("SELECT * FROM memory_entries WHERE id = %s", (entry_id,))
+
+    # Bot reported a failure (e.g. FFmpeg missing, no active voice session,
+    # source fetch failed). Roll the entry back to pending and surface the
+    # bot's error message to the caller so the UI can show it.
+    await db.execute(
+        "UPDATE memory_entries SET queue_status = 'pending' WHERE id = %s",
+        (entry_id,),
+    )
+    bot_error = bot_payload.get("error") or f"bot returned HTTP {resp.status_code}"
+    logger.error(f"Bot reported playback failure: {bot_error}")
+    raise HTTPException(500, f"Bot playback failed: {bot_error}")
 
 
 @router.delete("/{campaign_id}/audio-queue/{entry_id}")

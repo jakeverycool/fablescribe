@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/supabase";
+import { useToast } from "../lib/toast";
 
 interface QueueEntry {
   id: string;
@@ -11,6 +12,7 @@ interface QueueEntry {
 }
 
 export default function AudioQueue({ campaignId }: { campaignId: string }) {
+  const toast = useToast();
   const [entries, setEntries] = useState<QueueEntry[]>([]);
 
   const load = async () => {
@@ -25,9 +27,13 @@ export default function AudioQueue({ campaignId }: { campaignId: string }) {
   }, [campaignId]);
 
   const handlePlay = async (entryId: string) => {
-    await apiFetch(`/campaigns/${campaignId}/audio-queue/${entryId}/play`, {
+    const r = await apiFetch(`/campaigns/${campaignId}/audio-queue/${entryId}/play`, {
       method: "POST",
     });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast.show(err.detail || `Playback failed (HTTP ${r.status})`, "error");
+    }
     load();
   };
 

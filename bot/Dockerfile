@@ -4,12 +4,18 @@
 
 FROM node:20-slim AS base
 
-# Install build deps for native modules (libsodium-wrappers fallback uses pure JS,
-# but @discordjs/voice may pull native crypto; opusscript is pure JS so no libopus needed)
+# Install:
+# - python3/make/g++: build deps for native modules (libsodium-wrappers fallback
+#   uses pure JS, but @discordjs/voice may pull native crypto; opusscript is
+#   pure JS so no libopus needed)
+# - ffmpeg: required at runtime by @discordjs/voice / prism-media to transcode
+#   MP3/AAC audio (e.g. ElevenLabs TTS responses) into Opus before sending to
+#   Discord. Without it, createAudioResource() throws "FFmpeg/avconv not found!"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
