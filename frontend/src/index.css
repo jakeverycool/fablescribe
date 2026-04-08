@@ -118,13 +118,89 @@ body {
   color: var(--tome-100);
   background-color: var(--tome-950);
   background-image: radial-gradient(
-      ellipse at top,
-      rgba(107, 78, 230, 0.08),
-      transparent 60%
-    ),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    ellipse at top,
+    rgba(107, 78, 230, 0.08),
+    transparent 60%
+  );
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   DUST MOTES — animated background
+   Pure CSS, GPU-composited. Replaces the static SVG noise.
+   Each .dust-mote drifts upward and fades in/out on a long loop.
+   Container is fixed behind everything, pointer-events: none.
+   ============================================================ */
+.dust {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dust-mote {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(244, 229, 192, 0.55) 0%,
+    rgba(244, 229, 192, 0) 70%
+  );
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: dust-drift linear infinite;
+}
+@keyframes dust-drift {
+  0% {
+    transform: translate3d(0, 20px, 0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.7;
+  }
+  85% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate3d(0, -120px, 0);
+    opacity: 0;
+  }
+}
+/* 14 motes, hand-tuned positions / sizes / timings.
+   Sizes vary 2-5px, durations 14-24s, delays staggered so they
+   never pulse in sync. Negative delays start mid-cycle so the
+   field is already populated on first paint. */
+.dust-mote:nth-child(1)  { left:  4%; top: 88%; width: 3px; height: 3px; animation-duration: 18s; animation-delay:  -2s; }
+.dust-mote:nth-child(2)  { left: 12%; top: 72%; width: 4px; height: 4px; animation-duration: 22s; animation-delay:  -8s; }
+.dust-mote:nth-child(3)  { left: 19%; top: 95%; width: 2px; height: 2px; animation-duration: 15s; animation-delay:  -5s; }
+.dust-mote:nth-child(4)  { left: 26%; top: 60%; width: 3px; height: 3px; animation-duration: 20s; animation-delay: -12s; }
+.dust-mote:nth-child(5)  { left: 33%; top: 80%; width: 5px; height: 5px; animation-duration: 24s; animation-delay:  -1s; }
+.dust-mote:nth-child(6)  { left: 41%; top: 92%; width: 2px; height: 2px; animation-duration: 17s; animation-delay:  -9s; }
+.dust-mote:nth-child(7)  { left: 48%; top: 65%; width: 3px; height: 3px; animation-duration: 19s; animation-delay: -14s; }
+.dust-mote:nth-child(8)  { left: 56%; top: 85%; width: 4px; height: 4px; animation-duration: 21s; animation-delay:  -3s; }
+.dust-mote:nth-child(9)  { left: 63%; top: 75%; width: 2px; height: 2px; animation-duration: 16s; animation-delay: -11s; }
+.dust-mote:nth-child(10) { left: 71%; top: 90%; width: 3px; height: 3px; animation-duration: 23s; animation-delay:  -6s; }
+.dust-mote:nth-child(11) { left: 78%; top: 68%; width: 4px; height: 4px; animation-duration: 18s; animation-delay: -15s; }
+.dust-mote:nth-child(12) { left: 84%; top: 83%; width: 3px; height: 3px; animation-duration: 20s; animation-delay:  -4s; }
+.dust-mote:nth-child(13) { left: 91%; top: 78%; width: 2px; height: 2px; animation-duration: 14s; animation-delay: -10s; }
+.dust-mote:nth-child(14) { left: 96%; top: 95%; width: 3px; height: 3px; animation-duration: 22s; animation-delay:  -7s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dust-mote {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* Make sure app content sits above the dust layer. */
+.app-shell,
+.auth-shell,
+.loading-screen {
+  position: relative;
+  z-index: 1;
 }
 
 h1,

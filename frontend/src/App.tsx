@@ -55,11 +55,23 @@ function AppRoutes() {
   );
 }
 
+function DustLayer() {
+  // 14 motes — count must match the :nth-child rules in index.css
+  return (
+    <div className="dust" aria-hidden="true">
+      {Array.from({ length: 14 }).map((_, i) => (
+        <span key={i} className="dust-mote" />
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
+          <DustLayer />
           <AppRoutes />
         </AuthProvider>
       </ToastProvider>
