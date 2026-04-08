@@ -3,6 +3,8 @@ import {
   GatewayIntentBits,
   Events,
   InteractionType,
+  REST,
+  Routes,
 } from "discord.js";
 import {
   joinVoiceChannel,
@@ -352,9 +354,37 @@ httpServer.listen(BOT_HTTP_PORT, "127.0.0.1", () => {
   console.log(`Bot HTTP server listening on port ${BOT_HTTP_PORT}`);
 });
 
+// ── Slash command registration ──────────────────────────────────────────────
+// Single source of truth — also used by bot/src/register-commands.js for ad-hoc runs.
+const SLASH_COMMANDS = [
+  { name: "join", description: "Bot joins your current voice channel and starts transcribing" },
+  { name: "leave", description: "Bot leaves the voice channel and stops transcribing" },
+];
+
+async function ensureSlashCommands(clientId) {
+  const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+  // If DISCORD_DEV_GUILD_ID is set, register guild-scoped (instant propagation —
+  // ideal for dev iteration). Otherwise register globally (up to 1h to propagate).
+  const devGuildId = process.env.DISCORD_DEV_GUILD_ID;
+  try {
+    if (devGuildId) {
+      await rest.put(Routes.applicationGuildCommands(clientId, devGuildId), {
+        body: SLASH_COMMANDS,
+      });
+      console.log(`Slash commands registered to guild ${devGuildId} (instant)`);
+    } else {
+      await rest.put(Routes.applicationCommands(clientId), { body: SLASH_COMMANDS });
+      console.log("Slash commands registered globally");
+    }
+  } catch (err) {
+    console.error("Failed to register slash commands:", err.message);
+  }
+}
+
 // ── Start ───────────────────────────────────────────────────────────────────
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log(`Bot logged in as ${c.user.tag}`);
+  await ensureSlashCommands(c.user.id);
 });
 
 client.login(process.env.DISCORD_TOKEN);
