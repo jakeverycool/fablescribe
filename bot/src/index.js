@@ -16,7 +16,7 @@ import {
   createAudioResource,
   AudioPlayerStatus,
 } from "@discordjs/voice";
-import OpusScript from "opusscript";
+import { OpusEncoder } from "@discordjs/opus";
 import WebSocket from "ws";
 import crypto from "crypto";
 import http from "http";
@@ -43,11 +43,10 @@ const decoders = new Map(); // odecKey → OpusEncoder
 
 function getDecoder(userId) {
   if (!decoders.has(userId)) {
-    // Discord sends 48kHz stereo Opus
-    decoders.set(
-      userId,
-      new OpusScript(48000, 2, OpusScript.Application.AUDIO)
-    );
+    // Discord sends 48kHz stereo Opus. @discordjs/opus is a native binding
+    // to libopus — replaces the abandoned pure-JS opusscript which was
+    // hitting WASM Aborted() assertions on real-world Discord packets.
+    decoders.set(userId, new OpusEncoder(48000, 2));
   }
   return decoders.get(userId);
 }
@@ -146,12 +145,15 @@ async function handleJoin(interaction) {
 
     const decoder = getDecoder(userId);
 
+    let decoderRef = decoder;
+    let decodeFailures = 0;
     opusStream.on("data", (opusPacket) => {
       try {
         // Decode Opus → 48kHz stereo PCM (960 frames per 20ms at 48kHz)
-        const pcm48k = Buffer.from(decoder.decode(opusPacket));
+        const pcm48k = Buffer.from(decoderRef.decode(opusPacket));
         // Downsample → 16kHz mono PCM
         const pcm16k = downsample48kStereoTo16kMono(pcm48k);
+        decodeFailures = 0;
 
         // Send metadata frame then audio frame
         if (ws.readyState === WebSocket.OPEN) {
@@ -167,7 +169,21 @@ async function handleJoin(interaction) {
           ws.send(pcm16k);
         }
       } catch (err) {
-        // Decode errors on partial packets are normal at stream start/end
+        // Single decode failures on partial packets are normal at stream
+        // start/end, so we swallow them quietly. But opusscript can hit a
+        // WASM Aborted() that permanently corrupts the decoder instance —
+        // when that happens every subsequent decode throws too. Reset the
+        // decoder after a few consecutive failures so the user's stream
+        // can recover instead of silently going dead.
+        decodeFailures++;
+        if (decodeFailures >= 5) {
+          console.warn(
+            `Resetting Opus decoder for user ${userId} after ${decodeFailures} consecutive decode failures (last: ${err.message})`
+          );
+          decoders.delete(userId);
+          decoderRef = getDecoder(userId);
+          decodeFailures = 0;
+        }
       }
     });
 
@@ -212,6 +228,15 @@ async function handleLeave(interaction) {
 function cleanupSession(guildId) {
   const session = sessions.get(guildId);
   if (!session) return;
+
+  // Drop Opus decoders for users that were active in this session. We do
+  // this because opusscript caches state per-instance and a previous
+  // session can leave a decoder in an unusable state (especially after
+  // any WASM-level abort). Clearing here means the next /join always
+  // builds fresh decoders for those users.
+  for (const userId of session.receivers.keys()) {
+    decoders.delete(userId);
+  }
 
   // Close all audio receivers
   for (const [, stream] of session.receivers) {
