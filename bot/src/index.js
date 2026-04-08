@@ -350,7 +350,11 @@ const httpServer = http.createServer(async (req, res) => {
   }
 });
 
-httpServer.listen(BOT_HTTP_PORT, "127.0.0.1", () => {
+// Bind to 0.0.0.0 so the backend container can reach us over the Docker
+// network. The HTTP server is auth-gated by BOT_SECRET and is not exposed
+// to the host (no `ports:` mapping in docker-compose), so 0.0.0.0 here
+// only opens the port to other containers on the same compose network.
+httpServer.listen(BOT_HTTP_PORT, "0.0.0.0", () => {
   console.log(`Bot HTTP server listening on port ${BOT_HTTP_PORT}`);
 });
 
