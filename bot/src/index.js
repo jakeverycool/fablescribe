@@ -16,7 +16,9 @@ import {
   createAudioResource,
   AudioPlayerStatus,
 } from "@discordjs/voice";
-import { OpusEncoder } from "@discordjs/opus";
+// @discordjs/opus is CommonJS — must use default import + destructure under ESM
+import opusPkg from "@discordjs/opus";
+const { OpusEncoder } = opusPkg;
 import WebSocket from "ws";
 import crypto from "crypto";
 import http from "http";
